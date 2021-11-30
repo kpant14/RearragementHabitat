@@ -8,7 +8,6 @@ charset-normalizer==2.0.7
 click==8.0.3
 cloudpickle==2.0.0
 Cython==0.29.24
-dataclasses==0.8
 decorator==4.4.2
 gast==0.5.3
 google-auth==2.3.3
