@@ -47,11 +47,7 @@ RUN /bin/bash -c ". activate habitat; cd habitat-sim; pip install -r requirement
 # Install challenge specific habitat-lab
 RUN git clone https://github.com/kpant14/RearragementHabitat.git
 RUN /bin/bash -c ". activate habitat; cd env/habitat/habitat_lab; python setup.py develop --all"
-
-RUN cd ..
-RUN cd ..
-RUN cd ..
-RUN python neuralSlam.py
+RUN /bin/bash -c " wget -P https://purdue0-my.sharepoint.com/:f:/g/personal/kpant_purdue_edu/Et2R9BXuQqdPnGuJCxfIFawB6Zi92PxhZLQ6To3EJAinMA?e=ObEksl 
 # Silence habitat-sim logs
 ENV GLOG_minloglevel=2
 ENV MAGNUM_LOG="quiet"

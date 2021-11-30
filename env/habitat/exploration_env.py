@@ -187,6 +187,8 @@ class Exploration_Env(habitat.RLEnv):
             'sensor_pose': [0., 0., 0.],
             'pose_err': [0., 0., 0.],
             'geodesic_distance':[0],
+            'object_goal': obs['object_goal'],
+            'object_position': obs['object_position']
         }
 
         self.save_position()
@@ -198,16 +200,16 @@ class Exploration_Env(habitat.RLEnv):
         args = self.args
         self.timestep += 1
 
-        # # Action remapping
-        # if action == 2: # Forward
-        #     action = 1
-        #     #noisy_action = habitat.SimulatorActions.NOISY_FORWARD
-        # elif action == 1: # Right
-        #     action = 3
-        #     #noisy_action = habitat.SimulatorActions.NOISY_RIGHT
-        # elif action == 0: # Left
-        #     action = 2
-        #     #noisy_action = habitat.SimulatorActions.NOISY_LEFT
+        # Action remapping
+        if action == 2: # Forward
+            action = 1
+            #noisy_action = habitat.SimulatorActions.NOISY_FORWARD
+        elif action == 1: # Right
+            action = 3
+            #noisy_action = habitat.SimulatorActions.NOISY_RIGHT
+        elif action == 0: # Left
+            action = 2
+            #noisy_action = habitat.SimulatorActions.NOISY_LEFT
 
         self.last_loc = np.copy(self.curr_loc)
         self.last_loc_gt = np.copy(self.curr_loc_gt)
@@ -290,8 +292,9 @@ class Exploration_Env(habitat.RLEnv):
         self.info['pose_err'] = [dx_gt - dx_base,
                                  dy_gt - dy_base,
                                  do_gt - do_base]
-
-
+        
+        self.info['object_goal'] = obs['object_goal']
+        self.info['object_position'] = obs['object_position']                         
         if self.timestep%args.num_local_steps==0:
             area, ratio = self.get_global_reward()
             self.info['exp_reward'] = area

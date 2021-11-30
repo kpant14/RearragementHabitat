@@ -1,3 +1,4 @@
+import numpy as np
 from env.habitat.exploration_env import Exploration_Env
 from typing import Optional, Dict, List
 import json
@@ -118,14 +119,12 @@ class RearrangementRLEnv(Exploration_Env):
             and action_name == "STOP"
         ):
             episode_success_reward = self._rl_config.SUCCESS_REWARD
-
         reward += (
             agent_to_object_dist_reward
             + object_to_goal_dist_reward
             + gripped_success_reward
             + episode_success_reward
         )
-
         return reward
 
     def get_agent_to_object_dist_reward(self, observations):
@@ -136,14 +135,14 @@ class RearrangementRLEnv(Exploration_Env):
         prev_metric = self._prev_measure["agent_to_object_distance"]
         dist_reward = prev_metric - curr_metric
         self._prev_measure["agent_to_object_distance"] = curr_metric
-        return dist_reward
+        return np.sum(dist_reward)# this has to be changed
 
     def get_object_to_goal_dist_reward(self):
         curr_metric = self._env.get_metrics()["object_to_goal_distance"]
         prev_metric = self._prev_measure["object_to_goal_distance"]
         dist_reward = prev_metric - curr_metric
         self._prev_measure["object_to_goal_distance"] = curr_metric
-        return dist_reward
+        return np.sum(dist_reward)
 
     def _episode_success(self, observations):
         r"""Returns True if object is within distance threshold of the goal."""

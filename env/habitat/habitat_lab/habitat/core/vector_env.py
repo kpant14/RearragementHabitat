@@ -322,7 +322,7 @@ class VectorEnv:
         for read_fn in self._connection_read_fns:
             results.append(read_fn())
         self._is_waiting = False
-        obs, rews, dones, infos = zip(*results)
+        obs, rews, dones, infos = zip(*results)      
         return np.stack(obs), np.stack(rews), np.stack(dones), infos
 
     def step(self, actions: List[int]):

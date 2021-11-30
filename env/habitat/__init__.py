@@ -35,8 +35,7 @@ def construct_envs(args):
     args_list = []
 
     basic_config = cfg_env(config_paths=
-                           ["env/habitat/habitat_lab/configs/" + args.task_config])
-    print(basic_config.DATASET.CONTENT_SCENES)                       
+                           ["env/habitat/habitat_lab/configs/" + args.task_config])                       
     basic_config.defrost()
     basic_config.DATASET.SPLIT = args.split
     basic_config.DATASET.DATA_PATH = (
@@ -79,9 +78,7 @@ def construct_envs(args):
             "OBJECT_TO_GOAL_DISTANCE",
             "AGENT_TO_OBJECT_DISTANCE",
         ]
-        #config_env.TASK.POSSIBLE_ACTIONS = ["MOVE_FORWARD","TURN_RIGHT","TURN_LEFT","GRAB_RELEASE","STOP"]
-
-        config_env.TASK.POSSIBLE_ACTIONS = ["MOVE_FORWARD","TURN_RIGHT","TURN_LEFT","GRAB_RELEASE"]
+        config_env.TASK.POSSIBLE_ACTIONS = ["STOP","MOVE_FORWARD","TURN_LEFT","TURN_RIGHT","GRAB_RELEASE"]
         if len(scenes) > 0:
             config_env.DATASET.CONTENT_SCENES = scenes[
                                                 i * scene_split_size: (i + 1) * scene_split_size
