@@ -1,6 +1,5 @@
 absl-py==1.0.0
 astor==0.8.1
-attrs @ file:///home/conda/feedstock_root/build_artifacts/attrs_1620387926260/work
 braceexpand==0.1.7
 cached-property==1.5.2
 cachetools==4.2.4
@@ -8,56 +7,40 @@ certifi==2021.5.30
 charset-normalizer==2.0.7
 click==8.0.3
 cloudpickle==2.0.0
-colorama @ file:///home/conda/feedstock_root/build_artifacts/colorama_1602866480661/work
-cycler @ file:///home/conda/feedstock_root/build_artifacts/cycler_1635519461629/work
 Cython==0.29.24
 dataclasses==0.8
 decorator==4.4.2
 gast==0.5.3
-gitdb @ file:///home/conda/feedstock_root/build_artifacts/gitdb_1635085722655/work
-GitPython @ file:///home/conda/feedstock_root/build_artifacts/gitpython_1623994295351/work
 google-auth==2.3.3
 google-auth-oauthlib==0.4.6
 grpcio==1.42.0
 gym==0.21.0
 h5py==3.6.0
--e git+https://github.com/kpant14/RearragementHabitat.git@d73ee73ca69c6b8320e21094d460d4f22635764c#egg=habitat&subdirectory=env/habitat/habitat_lab
 habitat-sim==0.2.1
 idna==3.3
 ifcfg==0.22
 imageio==2.6.0
-imageio-ffmpeg @ file:///home/conda/feedstock_root/build_artifacts/imageio-ffmpeg_1629987409325/work
 importlib-metadata==4.8.2
 joblib==1.1.0
 Keras-Applications==1.0.8
 Keras-Preprocessing==1.1.2
-kiwisolver @ file:///home/conda/feedstock_root/build_artifacts/kiwisolver_1610099771815/work
 llvmlite==0.36.0
 lmdb==1.2.1
-magnum @ file:///opt/conda/envs/py36/conda-bld/habitat-sim_1627781154397/work/build/deps/magnum-bindings/src/python
 Markdown==3.3.6
-matplotlib @ file:///home/conda/feedstock_root/build_artifacts/matplotlib-suite_1604870955430/work
 mock==4.0.3
 moviepy==2.0.0.dev2
 msgpack==1.0.3rc1
 networkx==2.5.1
-numba @ file:///home/conda/feedstock_root/build_artifacts/numba_1623568542230/work
-numpy @ file:///home/conda/feedstock_root/build_artifacts/numpy_1626681920064/work
-numpy-quaternion @ file:///home/conda/feedstock_root/build_artifacts/quaternion_1627505421095/work
 oauthlib==3.1.1
 objectio==0.2.29
-olefile @ file:///home/conda/feedstock_root/build_artifacts/olefile_1602866521163/work
 opencv-python==4.5.4.58
 pandas==1.1.5
 pickle5==0.0.11
-Pillow @ file:///home/conda/feedstock_root/build_artifacts/pillow_1625677830966/work
 pkgconfig==1.5.5
 proglog==0.1.9
 protobuf==4.0.0rc2
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
-pyparsing @ file:///home/conda/feedstock_root/build_artifacts/pyparsing_1636757021002/work
-python-dateutil @ file:///home/conda/feedstock_root/build_artifacts/python-dateutil_1626286286081/work
 python3-xlib==0.15
 pytz==2021.3
 PyWavelets==1.1.1
@@ -68,11 +51,8 @@ rsa==4.7.2
 scikit-fmm==2019.1.30
 scikit-image==0.15.0
 scikit-learn==0.22.2.post1
-scipy @ file:///home/conda/feedstock_root/build_artifacts/scipy_1604304777848/work
 seaborn==0.9.0
 simplejson==3.17.6
-six @ file:///home/conda/feedstock_root/build_artifacts/six_1620240208055/work
-smmap @ file:///home/conda/feedstock_root/build_artifacts/smmap_1611376390914/work
 tb-nightly==2.8.0a20211117
 tensorboard==1.13.1
 tensorboard-data-server==0.6.1
@@ -83,10 +63,7 @@ termcolor==1.1.0
 torch==1.4.0
 torchaudio==0.4.0a0+719bcc7
 torchvision==0.5.0
-tornado @ file:///home/conda/feedstock_root/build_artifacts/tornado_1610094701020/work
-tqdm @ file:///home/conda/feedstock_root/build_artifacts/tqdm_1632160078689/work
 typer==0.4.0
-typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/typing_extensions_1637155965157/work
 urllib3==1.26.7
 webdataset==0.1.40
 Werkzeug==2.0.2
