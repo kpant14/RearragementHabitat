@@ -93,7 +93,6 @@ class RearrangementSim(HabitatSim):
 
                 object_rot = quat_to_magnum(object_rot)
                 self.set_rotation(object_rot, object_id)
-
                 self.set_object_motion_type(MotionType.STATIC, object_id)
 
         # Recompute the navmesh after placing all the objects.

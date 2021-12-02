@@ -115,10 +115,10 @@ def construct_envs(args):
         config_env.DATASET.SPLIT = args.split
         config_env.freeze()
         env_configs.append(config_env)
-        #config_baseline = cfg_baseline()
-        config_baseline = config_env
+        config_baseline = cfg_baseline()
+        #config_baseline = config_env
         baseline_configs.append(config_baseline)
-
+        
         args_list.append(args)
 
     envs = VectorEnv(

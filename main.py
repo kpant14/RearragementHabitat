@@ -304,19 +304,25 @@ def main():
     # cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
     # global_goals = [[int(action[0] * local_w), int(action[1] * local_h)]
     #                 for action in cpu_actions]
-
-    global_goals = [infos[env_idx]['object_goal'] for env_idx
+    
+    global_goals = [infos[env_idx]['object_position'] for env_idx
          in range(num_scenes)]
+    
+        
     # Compute planner inputs
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
-        global_goals[e][0] = [int((global_goals[e][0][0]*100)/25 + local_h/2),int((global_goals[e][0][1]*100)/25 + local_w/2)] 
+        r, c = locs[e, 1], locs[e, 0]
+        loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                        int(c * 100.0 / args.map_resolution)]               
+        z_coordinate = global_goals[e][1][0] * np.cos(global_goals[e][1][1])
+        x_coordinate = global_goals[e][1][0] * np.sin(global_goals[e][1][1])
+        global_goals[e][0] = [x_coordinate * 100.0 / args.map_resolution +loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
         p_input['goal'] = global_goals[e][0].astype(int) # only the first object
         p_input['map_pred'] = global_input[e, 0, :, :].detach().cpu().numpy()
         p_input['exp_pred'] = global_input[e, 1, :, :].detach().cpu().numpy()
         p_input['pose_pred'] = planner_pose_inputs[e]
 
-    print(global_goals[0][0].astype(int))
     # Output stores local goals as well as the the ground-truth action
     output = envs.get_short_term_goal(planner_inputs)
     

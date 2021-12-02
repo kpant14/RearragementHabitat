@@ -68,6 +68,7 @@ def merge_sim_episode_config(sim_config: Config, episode: Episode) -> Any:
         agent_name = sim_config.AGENTS[sim_config.DEFAULT_AGENT_ID]
         agent_cfg = getattr(sim_config, agent_name)
         agent_cfg.defrost()
+        print(episode.start_position)
         agent_cfg.START_POSITION = episode.start_position
         agent_cfg.START_ROTATION = episode.start_rotation
         agent_cfg.IS_SET_START_STATE = True

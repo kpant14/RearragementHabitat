@@ -79,7 +79,6 @@ class ObjectPosition(PointGoalSensor):
         agent_state = self._sim.get_agent_state()
         agent_position = agent_state.position
         rotation_world_agent = agent_state.rotation
-        #object_id = self._sim.get_existing_object_ids()[0]
         object_count = len(self._sim.get_existing_object_ids())
         pointgoal = np.zeros((object_count,2))
         for i,object_id in enumerate(self._sim.get_existing_object_ids()):
@@ -112,7 +111,6 @@ class ObjectGoal(PointGoalSensor):
         agent_state = self._sim.get_agent_state()
         agent_position = agent_state.position
         rotation_world_agent = agent_state.rotation
-        #print(episode.goals[0].position) change is required here
         object_count = len(self._sim.get_existing_object_ids())
         pointgoal = np.zeros((object_count,2))
         for i in range(object_count):
@@ -262,7 +260,6 @@ def merge_sim_episode_with_object_config(
 ) -> Any:
     sim_config = merge_sim_episode_config(sim_config, episode)
     sim_config.defrost()
-    #print(episode.objects)
     sim_config.objects = [episode.objects]
     sim_config.freeze()
 
