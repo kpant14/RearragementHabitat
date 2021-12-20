@@ -13,7 +13,7 @@
 
 from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 from habitat_sim.nav import NavMeshSettings
-from habitat_sim.utils import quat_from_coeffs, quat_to_magnum
+from habitat_sim.utils.common import quat_from_coeffs, quat_to_magnum
 from habitat.core.registry import registry
 from habitat.config import Config
 import os
@@ -70,9 +70,6 @@ class RearrangementSim(HabitatSim):
         self.objid_to_sim_object_mapping = {}
         for objects in objects_:
             if objects is not None:
-                # object_template = objects.object_handle["object_template"]
-                # object_pos = objects["position"]
-                # object_rot = objects["rotation"]
                 obj_handle = objects.object_handle.split(".")
                 object_template = obj_handle[0]+".object_config."+obj_handle[2]
                 object_pos = objects.position
@@ -83,14 +80,11 @@ class RearrangementSim(HabitatSim):
                 object_attr = obj_attr_mgr.get_template_by_id(object_template_id)
                 obj_attr_mgr.register_template(object_attr)
                 object_id = self.add_object_by_handle(object_attr.handle)
-                # self.sim_object_to_objid_mapping[object_id] = objects["object_id"]
-                # self.objid_to_sim_object_mapping[objects["object_id"]] = object_id
                 self.sim_object_to_objid_mapping[object_id] = objects.object_id
                 self.objid_to_sim_object_mapping[objects.object_id] = object_id
                 self.set_translation(object_pos, object_id)
                 if isinstance(object_rot, list):
                     object_rot = quat_from_coeffs(object_rot)
-
                 object_rot = quat_to_magnum(object_rot)
                 self.set_rotation(object_rot, object_id)
                 self.set_object_motion_type(MotionType.STATIC, object_id)
