@@ -79,6 +79,7 @@ def visualize(fig, ax, img, grid, pos, gt_pos, dump_dir, rank, ep_no, t,
         fn = '{}/episodes/{}/{}/{}-{}-Vis-{}.png'.format(
             dump_dir, (rank + 1), ep_no, rank, ep_no, t)
         plt.savefig(fn)
+       
 
 
 def insert_circle(mat, x, y, value):
@@ -138,6 +139,7 @@ def get_colored_map(mat, collision_map, visited, visited_gt, goal,
     colored = 1 - colored
     colored *= 255
     colored = colored.astype(np.uint8)
+
     return colored
 
 

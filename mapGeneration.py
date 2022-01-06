@@ -1,169 +1,103 @@
-import os
-import torch
-from env import habitat
-from env.habitat.utils.supervision import HabitatMaps 
-from env.habitat import exploration_env
-import numpy as np
-from torch.nn import functional as F
-from habitat import Env
-from habitat.config.default import get_config
-from utils.model import get_grid
-from arguments import get_args
-from env.rearrange_dataset import RearrangementDatasetV0
-import quaternion
-import matplotlib.pyplot as plt
-
-def get_sim_location(env):
-    agent_state = env.sim.get_agent_state(0)
-    x = -agent_state.position[2]
-    y = -agent_state.position[0]
-    axis = quaternion.as_euler_angles(agent_state.rotation)[0]
-    if (axis%(2*np.pi)) < 0.1 or (axis%(2*np.pi)) > 2*np.pi - 0.1:
-        o = quaternion.as_euler_angles(agent_state.rotation)[1]
-    else:
-        o = 2*np.pi - quaternion.as_euler_angles(agent_state.rotation)[1]
-    if o > np.pi:
-        o -= 2 * np.pi
-    return x, y, o
-
-def get_gt_map(config, full_map_size):
-    
-    env = Env(config)
-    # Get map in habitat simulator coordinates
-    map_obj = HabitatMaps(env)
-    
-    agent_y = env.sim.get_agent_state().position.tolist()[1]*100.
-    sim_map = map_obj.get_map(agent_y, -100., 100.0)
-
-    sim_map[sim_map > 0] = 1.
-
-    # Transform the map to align with the agent
-    min_x, min_y = map_obj.origin/100.0
-    x, y, o = get_sim_location(env)
-    x, y = -x - min_x, -y - min_y
-    range_x, range_y = map_obj.max/100. - map_obj.origin/100.
-
-    map_size = sim_map.shape
-    scale = 2.
-    grid_size = int(scale*max(map_size))
-    grid_map = np.zeros((grid_size, grid_size))
-
-    grid_map[(grid_size - map_size[0])//2:
-                (grid_size - map_size[0])//2 + map_size[0],
-                (grid_size - map_size[1])//2:
-                (grid_size - map_size[1])//2 + map_size[1]] = sim_map
-
-    if map_size[0] > map_size[1]:
-        st = torch.tensor([[
-                (x - range_x/2.) * 2. / (range_x * scale) \
-                            * map_size[1] * 1. / map_size[0],
-                (y - range_y/2.) * 2. / (range_y * scale),
-                180.0 + np.rad2deg(o)
-            ]])
-
-    else:
-        st = torch.tensor([[
-                (x - range_x/2.) * 2. / (range_x * scale),
-                (y - range_y/2.) * 2. / (range_y * scale) \
-                        * map_size[0] * 1. / map_size[1],
-                180.0 + np.rad2deg(o)
-            ]])
-
-    rot_mat, trans_mat = get_grid(st, (1, 1,
-        grid_size, grid_size), torch.device("cpu"))
-
-    grid_map = torch.from_numpy(grid_map).float()
-    grid_map = grid_map.unsqueeze(0).unsqueeze(0)
-    translated = F.grid_sample(grid_map, trans_mat)
-    rotated = F.grid_sample(translated, rot_mat)
-
-    episode_map = torch.zeros((full_map_size, full_map_size)).float()
-    if full_map_size > grid_size:
-        episode_map[(full_map_size - grid_size)//2:
-                    (full_map_size - grid_size)//2 + grid_size,
-                    (full_map_size - grid_size)//2:
-                    (full_map_size - grid_size)//2 + grid_size] = \
-                            rotated[0,0]
-    else:
-        episode_map = rotated[0,0,
-                            (grid_size - full_map_size)//2:
-                            (grid_size - full_map_size)//2 + full_map_size,
-                            (grid_size - full_map_size)//2:
-                            (grid_size - full_map_size)//2 + full_map_size]
-
-
-
-    episode_map = episode_map.numpy()
-    episode_map[episode_map > 0] = 1.
-
-    return episode_map
-
-def fill_color(colored, mat, color):
-    for i in range(3):
-        colored[:, :, 2 - i] *= (1 - mat)
-        colored[:, :, 2 - i] += (1 - color[i]) * mat
-    return colored
-
-def save_plot(dir, map, map_name):
-    m, n = map.shape
-    colored = np.ones((m, n, 3))
-    current_palette = [(1,1,1)]
-    colored = fill_color(colored, map, current_palette[0])        
-    colored = 1 - colored
-    colored *= 255
-    colored = colored.astype(np.uint8)
-    #plt.imshow(colored)
-    #plt.savefig(dir+map_name+".png")
-    plt.imsave(dir+map_name+".png",colored)
-    
-
+from mapUtils import *
 
 if __name__ == "__main__":
+    # Source directory to get the maps of gibson dataset
+    map_dir = "data/maps/habitat_train_2400"
     args = get_args()
     full_map_size = args.map_size_cm//args.map_resolution
-    config_env = get_config("configs/tasks/pointnav.yaml")
-    config_env.defrost()
-    config_env.DATASET.DATA_PATH = (
-    "data/datasets/rearrangement/gibson/v1/{split}/{split}.json.gz"
-    )
-    config_env.DATASET.TYPE = "RearrangementDataset-v0"
-    config_env.ENVIRONMENT.MAX_EPISODE_STEPS = 50
-    config_env.SIMULATOR.TYPE = "RearrangementSim-v0"
-    config_env.SIMULATOR.ACTION_SPACE_CONFIG = "RearrangementActions-v0"
-    config_env.SIMULATOR.GRAB_DISTANCE = 2.0
-    config_env.SIMULATOR.HABITAT_SIM_V0.ENABLE_PHYSICS = True
-    config_env.TASK.TYPE = "RearrangementTask-v0"
-    config_env.TASK.SUCCESS_DISTANCE = 1.0
-    config_env.TASK.SENSORS = [
-        "GRIPPED_OBJECT_SENSOR",
-        "OBJECT_POSITION",
-        "OBJECT_GOAL",
-    ]
-    config_env.TASK.GOAL_SENSOR_UUID = "object_goal"
-    config_env.TASK.MEASUREMENTS = [
-        "OBJECT_TO_GOAL_DISTANCE",
-        "AGENT_TO_OBJECT_DISTANCE",
-    ]
-    config_env.TASK.POSSIBLE_ACTIONS = ["STOP","MOVE_FORWARD","TURN_LEFT","TURN_RIGHT","GRAB_RELEASE"]
-    dataset = RearrangementDatasetV0(config_env.DATASET)
-    config_env.freeze()
-    # rearrange_config_env = get_config("configs/tasks/pointnav.yaml")
-    # rearrange_config_env.defrost()
-    # rearrange_config_env.DATASET.DATA_PATH = (
-    # "data/datasets/rearrangement/gibson/v1/{split}/{split}.json.gz"
-    # )
-    # rearrange_config_env.freeze()
-    scenes  = RearrangementDatasetV0.get_scenes_to_load(config_env.DATASET)
-    map_dir = "data/maps/3000cm_100_/"
-    if not os.path.exists(map_dir):
-        os.makedirs(map_dir)
+    #For creating maps ffrom the gibson dataset with different orientation
+    create_map_habitat(map_dir)
+    num_start_pos  = 10
+    num_paths = 20
+    mask_size = 20
+    # Target directory to store the dataset 
+    file_dir = 'data/maps/train'
+    if not osp.isdir(file_dir):
+        os.mkdir(file_dir)
+    for i in range(len(os.listdir(map_dir))):
+        map_file_name = osp.join(map_dir, f'map_{i}.png')
+        # Reading the black and white image from the source directory
+        map = io.imread(map_file_name, as_gray = True)
+        for j in range(num_start_pos):
+            start,ValidityCheckerObj = get_random_valid_pos(map)
+            for k in range(mask_size): 
+                if (k==0):
+                    masked_img = map
+                    # Generate paths on the full maps using RRT* only on the full map
+                    paths = []
+                    for p in range(num_paths):
+                        path_param = {}
+                        goal,ValidityCheckerObj = get_random_valid_pos(map)
+                        path, path_interpolated, success = get_path(start, goal, ValidityCheckerObj)
+                        path_param['path'] = path
+                        path_param['path_interpolated'] = path_interpolated
+                        path_param['success'] = success
+                        paths.append(path_param)
+                else:
+                    h, w = map.shape[:2]
+                    start_pos = (start[0]/dist_resl, args.map_size_cm//args.map_resolution - start[1]/dist_resl)
+                    mask = create_circular_mask(h, w, center = start_pos , radius = (full_map_size/2)*(k)/mask_size)
+                    masked_img = map.copy()
+                    masked_img[~mask] = 1
+                env_file_dir = osp.join(file_dir, f'env{i*num_start_pos*mask_size + j*mask_size + k:06d}')
+                if not osp.isdir(env_file_dir):
+                    os.mkdir(env_file_dir)
+                file_name = osp.join(env_file_dir, f'map_{i*num_start_pos*mask_size + j*mask_size + k}.png')
+                save_plot(masked_img,file_name)    
+                
+                for p in range(num_paths):
+                    pickle.dump(paths[p], open(osp.join(env_file_dir,f'path_{p}.p'), 'wb'))
+                    # fig = plt.figure()
+                    # ax = fig.gca()
+                    # implot = plt.imshow(masked_img)
+                    # for path_ in paths[p]['path_interpolated']:
+                    #     ax.plot(path_[0]/dist_resl, args.map_size_cm//args.map_resolution - path_[1]/dist_resl,'.-r', linewidth = 5)
+                    # plt.axis('off')    
+                    # fig.savefig(env_file_dir+'/'+f'_path_{p}.png')
+                    # plt.close(fig)
+                    
+    # for i in range(len(os.listdir(map_dir))):
+    #     map_file_name = osp.join(map_dir, f'map_{i}.png')
+    #     # Reading the black and white image from the source directory
+    #     map = cv.imread(map_file_name)
+    #     # Detecting edge from the occupancy map created from gibson datasets 
+    #     map = cv.Canny(map,100,200)
+    #     # Generate paths on the full maps using RRT*
+    #     paths = generate_path_RRTstar(0, num_paths, map)
+    #     for j in range(num_paths):
+    #         path_interpolated = paths[j]['path_interpolated']
+    #         for k in range(mask_size + 1): 
+    #             if (k==0):
+    #                 masked_img = map
+    #             else:
+    #                 h, w = map.shape[:2]
+    #                 #If there is not a valid path between start and goal position.
+    #                 if path_interpolated.size==0:
+    #                     start_pos = None
+    #                 else:    
+    #                     start_pos = (path_interpolated[0][0]/dist_resl, args.map_size_cm//args.map_resolution - path_interpolated[0][1]/dist_resl)
+    #                 mask = create_circular_mask(h, w, center = start_pos , radius = (full_map_size/2)*(k+1)/mask_size)
+    #                 masked_img = map.copy()
+    #                 masked_img[~mask] = 1
+    #             env_file_dir = osp.join(file_dir, f'env{i*num_paths*mask_size + j*mask_size + + k:06d}')
+    #             if not osp.isdir(env_file_dir):
+    #                 os.mkdir(env_file_dir)
+    #             file_name = osp.join(env_file_dir, f'map_{i*num_paths*mask_size + j*mask_size + + k}.png')
+    #             cv.imwrite(file_name, masked_img)
+    #             pickle.dump(paths[j], open(osp.join(env_file_dir,f'path_0.p'), 'wb'))
+                # fig = plt.figure()
+                # ax = fig.gca()
+                # #Map = io.imread(file_name)
+                # implot = plt.imshow(map)
+                # for path_ in path_interpolated:
+                #     ax.plot(path_[0]/dist_resl, args.map_size_cm//args.map_resolution - path_[1]/dist_resl,'.-r', linewidth = 10)
+                # plt.axis('off')    
+                # fig.savefig(env_file_dir+'/'+f'_path_{0}.png')
+                
 
-    for i,scene in enumerate(scenes):
-        config_env.defrost()
-        config_env.DATASET.CONTENT_SCENES = scenes[i:i+1]
-        print(config_env.DATASET.CONTENT_SCENES)
-        print("Loading {}".format(config_env.SIMULATOR.SCENE))
-        config_env.freeze()
-        map = get_gt_map(config_env,full_map_size)
-        save_plot(map_dir,map,scene)
+        
+    
+
+                
+
 
