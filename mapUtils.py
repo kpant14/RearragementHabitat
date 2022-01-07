@@ -284,7 +284,7 @@ def create_map_habitat(map_dir):
     full_map_size = args.map_size_cm//args.map_resolution
     config_env = get_config("configs/tasks/pointnav.yaml")
     config_env.defrost()
-    config_env.DATASET.SPLIT = 'train'
+    config_env.DATASET.SPLIT = 'val'
     config_env.DATASET.DATA_PATH = (
     "data/datasets/rearrangement/gibson/v1/{split}/{split}.json.gz"
     )

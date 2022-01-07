@@ -2,16 +2,16 @@ from mapUtils import *
 
 if __name__ == "__main__":
     # Source directory to get the maps of gibson dataset
-    map_dir = "data/maps/habitat_train_2400"
+    map_dir = "data/maps/habitat_val_2400"
     args = get_args()
     full_map_size = args.map_size_cm//args.map_resolution
     #For creating maps ffrom the gibson dataset with different orientation
     create_map_habitat(map_dir)
-    num_start_pos  = 10
+    num_start_pos  = 1
     num_paths = 20
-    mask_size = 20
+    mask_size = 1
     # Target directory to store the dataset 
-    file_dir = 'data/maps/train'
+    file_dir = 'data/maps/val'
     if not osp.isdir(file_dir):
         os.mkdir(file_dir)
     for i in range(len(os.listdir(map_dir))):
