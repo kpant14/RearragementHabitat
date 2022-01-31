@@ -13,6 +13,8 @@ from PIL import Image
 from torch.nn import functional as F
 from torchvision import transforms
 
+from utils.utils import ValidityChecker
+
 if sys.platform == 'darwin':
     matplotlib.use("tkagg")
 else:
@@ -29,7 +31,9 @@ from env.habitat.utils.noisy_actions import CustomActionSpaceConfiguration
 from  env.habitat.utils import pose as pu
 from  env.habitat.utils import visualizations as vu
 from env.habitat.utils.supervision import HabitatMaps
-
+from mapUtils import get_path, create_prm_planner,get_random_valid_pos, get_validity_checker
+from ompl import base as ob
+from ompl import geometric as og
 from model import get_grid
 import env.rearrange_sim
 import env.rearrange_task
@@ -99,6 +103,7 @@ class Exploration_Env(habitat.RLEnv):
                                       interpolation = Image.NEAREST)])
         self.scene_name = None
         self.maps_dict = {}
+        
 
     def randomize_env(self):
         self._env._episode_iterator._shuffle_iterator()
@@ -144,14 +149,29 @@ class Exploration_Env(habitat.RLEnv):
             self.explorable_map = self._get_gt_map(full_map_size)
         self.prev_explored_area = 0.
 
+        # For prm path dataset generation  
+        self.goal_reached =0
+        self.prm_star_path = {}
+        self.prm_star_path_idx = 0
+        space = ob.RealVectorStateSpace(2)
+        self.start_state  = ob.State(space)
+        self.goal_state = ob.State(space)
+
         # Preprocess observations
         rgb = obs['rgb'].astype(np.uint8)
         self.obs = rgb # For visualization
+        
         if self.args.frame_width != self.args.env_frame_width:
             rgb = np.asarray(self.res(rgb))
         state = rgb.transpose(2, 0, 1)
         depth = _preprocess_depth(obs['depth'])
-
+        
+        # To store as the dataset for Region proposal network
+        self.curr_rgb = rgb
+        self.curr_depth = depth
+        self.last_rgb = self.curr_rgb
+        self.last_depth = self.curr_depth
+        
         # Initialize map and pose
         self.map_size_cm = args.map_size_cm
         self.mapper.reset_map(self.map_size_cm)
@@ -188,7 +208,8 @@ class Exploration_Env(habitat.RLEnv):
             'pose_err': [0., 0., 0.],
             'geodesic_distance':[0],
             'object_goal': obs['object_goal'],
-            'object_position': obs['object_position']
+            'object_position': obs['object_position'],
+            'gt_map': self.explorable_map
         }
 
         self.save_position()
@@ -214,7 +235,9 @@ class Exploration_Env(habitat.RLEnv):
         self.last_loc = np.copy(self.curr_loc)
         self.last_loc_gt = np.copy(self.curr_loc_gt)
         self._previous_action = action
-
+        
+        self.last_rgb = np.copy(self.curr_rgb)
+        self.last_depth = np.copy(self.curr_depth)
         # if args.noisy_actions:
         #     obs, rew, done, info = super().step(noisy_action)
         # else:
@@ -240,6 +263,9 @@ class Exploration_Env(habitat.RLEnv):
 
         self.curr_loc_gt = pu.get_new_pose(self.curr_loc_gt,
                                (dx_gt, dy_gt, do_gt))
+
+        self.curr_rgb = rgb
+        self.curr_depth = depth   
 
         if not args.noisy_odometry:
             self.curr_loc = self.curr_loc_gt
@@ -416,8 +442,8 @@ class Exploration_Env(habitat.RLEnv):
 
         # Get Map prediction
         map_pred = inputs['map_pred']
-        exp_pred = inputs['exp_pred']
-
+        exp_pred = inputs['exp_pred'] 
+            
         grid = np.rint(map_pred)
         explored = np.rint(exp_pred)
 
@@ -440,6 +466,26 @@ class Exploration_Env(habitat.RLEnv):
                  int(c * 100.0/args.map_resolution - gy1)]
         start = pu.threshold_poses(start, grid.shape)
         #TODO: try reducing this
+
+        if args.data_gen:
+            planning_map = self.explorable_map[gx1:gx2, gy1:gy2]
+            _,validity_checker = get_validity_checker(planning_map)
+            prm_planner_setup,prm_planner = create_prm_planner(validity_checker)
+            
+
+            if (len(self.prm_star_path) == 0 or self.goal_reached == 1):
+                self.start_state[1] = np.float64((grid.shape[0] - start[0])* args.map_resolution / 100 )
+                self.start_state[0] = np.float64(start[1]* args.map_resolution / 100 )
+                prm_star_path = {}
+                success = False
+                while success == False:
+                    self.goal_state,_ = get_random_valid_pos(planning_map, robot_radius = 0.2) 
+                    path, path_interpolated, success = get_path(self.start_state, self.goal_state, prm_planner_setup, prm_planner,self.rank+1)
+                    prm_star_path['path'] = path
+                    prm_star_path['path_interpolated'] = path_interpolated
+                    prm_star_path['success'] = success
+                self.prm_star_path = prm_star_path    
+                self.goal_reached = 0
 
         self.visited[gx1:gx2, gy1:gy2][start[0]-2:start[0]+3,
                                        start[1]-2:start[1]+3] = 1
@@ -475,7 +521,10 @@ class Exploration_Env(habitat.RLEnv):
         # Get goal
         goal = inputs['goal']
         goal = pu.threshold_poses(goal, grid.shape)
-
+        
+        if args.data_gen:
+            goal = np.array([grid.shape[0] - self.goal_state[1]*100.0 / args.map_resolution, self.goal_state[0]*100.0 / args.map_resolution]).astype(int)
+            goal = pu.threshold_poses(goal, grid.shape)
 
         # Get intrinsic reward for global policy
         # Negative reward for exploring explored areas i.e.
@@ -498,7 +547,48 @@ class Exploration_Env(habitat.RLEnv):
         relative_dist = pu.get_l2_distance(stg_x, start[0], stg_y, start[1])
         relative_dist = relative_dist*5./100.
         angle_st_goal = math.degrees(math.atan2(stg_x - start[0],
-                                                stg_y - start[1]))
+                                                stg_y - start[1]))                                 
+       
+        if args.data_gen:
+            path = self.prm_star_path['path_interpolated'] 
+            (stg_y, stg_x) = path[self.prm_star_path_idx] * 100.0 / args.map_resolution
+            stg_x = grid.shape[0] - stg_x
+            relative_dist = pu.get_l2_distance(stg_x, start[0], stg_y, start[1])
+            relative_dist = relative_dist*5./100.
+            angle_st_goal = math.degrees(math.atan2(stg_x - start[0],
+                                                    stg_y - start[1]))
+            path_to_go = path[self.prm_star_path_idx:]
+            if (relative_dist < 0.5):
+                if (self.prm_star_path_idx < len(path) - 1):
+                    self.prm_star_path_idx += 1
+        
+            if (pu.get_l2_distance(start[0], goal[0], start[1], goal[1])*5./100. < 0.2):
+                    self.goal_reached = 1 
+                    self.prm_star_path_idx = 0       
+                
+            # Data Logging for Region Proposal Network
+            dump_dir = "{}/data/{}/".format(args.dump_location,
+                                                    args.exp_name)
+            ep_dir = '{}/env{}/'.format(
+                                dump_dir, self.rank+1)  
+            data={}
+            data['last_loc'] = self.last_loc
+            data['last_rgb'] = self.last_rgb
+            data['last_depth'] = self.last_depth
+            data['prm_star_path'] = self.prm_star_path
+            data['curr_loc'] = self.curr_loc
+            data['curr_rgb'] = self.curr_rgb
+            data['curr_depth'] = self.curr_depth
+            data['goal'] = goal
+            data['path_to_go'] = path_to_go
+            data['next_waypoint'] = path[self.prm_star_path_idx]
+            data['explored_map'] = self.explored_map[gx1:gx2, gy1:gy2]
+            data['collison_map'] = self.collison_map[gx1:gx2, gy1:gy2]
+            
+            if not os.path.exists(ep_dir):
+                os.makedirs(ep_dir)
+            pickle.dump(data, open(os.path.join(ep_dir,f'data{self.episode_no * args.max_episode_length + self.timestep:06d}.p'), 'wb'))
+            
         angle_agent = (start_o)%360.0
         if angle_agent > 180:
             angle_agent -= 360
@@ -506,6 +596,8 @@ class Exploration_Env(habitat.RLEnv):
         relative_angle = (angle_agent - angle_st_goal)%360.0
         if relative_angle > 180:
             relative_angle -= 360
+
+        self.relative_angle = relative_angle
 
         def discretize(dist):
             dist_limits = [0.25, 3, 10]
@@ -527,11 +619,11 @@ class Exploration_Env(habitat.RLEnv):
 
         output = np.zeros((args.goals_size + 1))
 
+        # #prmstar path following for dataset generation
+
         output[0] = int((relative_angle%360.)/5.)
         output[1] = discretize(relative_dist)
         output[2] = gt_action
-
-        self.relative_angle = relative_angle
 
         if args.visualize or args.print_images:
             dump_dir = "{}/dump/{}/".format(args.dump_location,

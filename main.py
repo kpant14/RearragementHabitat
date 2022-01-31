@@ -2,7 +2,8 @@ import time
 from collections import deque
 
 import os
-
+from ompl import base as ob
+from ompl import geometric as og
 os.environ["OMP_NUM_THREADS"] = "1"
 import numpy as np
 import torch
@@ -16,7 +17,7 @@ from env import make_vec_envs
 from utils.storage import GlobalRolloutStorage, FIFOMemory
 from utils.optimization import get_optimizer
 from model import RL_Policy, Local_IL_Policy, Neural_SLAM_Module
-
+from mapUtils import get_path, create_prm_planner,get_random_valid_pos, get_validity_checker
 import algo
 
 import sys
@@ -91,7 +92,6 @@ def main():
     exp_costs = deque(maxlen=1000)
     pose_costs = deque(maxlen=1000)
 
-    #g_masks = torch.ones(num_scenes).float().to(device)
     l_masks = torch.zeros(num_scenes).float().to(device)
 
     best_local_loss = np.inf
@@ -102,18 +102,10 @@ def main():
         explored_area_log = np.zeros((num_scenes, num_episodes, traj_lengths))
         explored_ratio_log = np.zeros((num_scenes, num_episodes, traj_lengths))
 
-    #g_episode_rewards = deque(maxlen=1000)
 
     l_action_losses = deque(maxlen=1000)
 
-    #g_value_losses = deque(maxlen=1000)
-    #g_action_losses = deque(maxlen=1000)
-    #g_dist_entropies = deque(maxlen=1000)
-
-    #per_step_g_rewards = deque(maxlen=1000)
-
-    #g_process_rewards = np.zeros((num_scenes))
-
+   
     # Starting environments
     torch.set_num_threads(1)
     envs = make_vec_envs(args)
@@ -174,12 +166,12 @@ def main():
             planner_pose_inputs[e, 3:] = lmb[e]
             origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
                           lmb[e][0] * args.map_resolution / 100.0, 0.]
-
         for e in range(num_scenes):
             local_map[e] = full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
             local_pose[e] = full_pose[e] - \
                             torch.from_numpy(origins[e]).to(device).float()
 
+    
     init_map_and_pose()
 
     # Global policy observation space
@@ -187,10 +179,6 @@ def main():
                                          (8,
                                           local_w,
                                           local_h), dtype='uint8')
-
-    # Global policy action space
-    #g_action_space = gym.spaces.Box(low=0.0, high=1.0,
-    #                                shape=(2,), dtype=np.float32)
 
     # Local policy observation space
     l_observation_space = gym.spaces.Box(0, 255,
@@ -207,16 +195,6 @@ def main():
     slam_optimizer = get_optimizer(nslam_module.parameters(),
                                    args.slam_optimizer)
 
-    # # Global policy
-    # g_policy = RL_Policy(g_observation_space.shape, g_action_space,
-    #                     base_kwargs={'recurrent': args.use_recurrent_global,
-    #                                   'hidden_size': g_hidden_size,
-    #                                   'downscaling': args.global_downscaling
-    #                                   }).to(device)
-    # g_agent = algo.PPO(g_policy, args.clip_param, args.ppo_epoch,
-    #                    args.num_mini_batch, args.value_loss_coef,
-    #                    args.entropy_coef, lr=args.global_lr, eps=args.eps,
-    #                    max_grad_norm=args.max_grad_norm)
 
     # Local policy
     l_policy = Local_IL_Policy(l_observation_space.shape, envs.action_space.n,
@@ -226,11 +204,6 @@ def main():
     local_optimizer = get_optimizer(l_policy.parameters(),
                                     args.local_optimizer)
 
-    # # Storage
-    # g_rollouts = GlobalRolloutStorage(args.num_global_steps,
-    #                                   num_scenes, g_observation_space.shape,
-    #                                   g_action_space, g_policy.rec_state_size,
-    #                                   1).to(device)
 
     slam_memory = FIFOMemory(args.slam_memory_size)
 
@@ -243,15 +216,6 @@ def main():
 
     if not args.train_slam:
         nslam_module.eval()
-
-    # if args.load_global != "0":
-    #     print("Loading global {}".format(args.load_global))
-    #     state_dict = torch.load(args.load_global,
-    #                             map_location=lambda storage, loc: storage)
-    #     g_policy.load_state_dict(state_dict)
-
-    # if not args.train_global:
-    #     g_policy.eval()
 
     if args.load_local != "0":
         print("Loading local {}".format(args.load_local))
@@ -276,52 +240,36 @@ def main():
     locs = local_pose.cpu().numpy()
     global_input = torch.zeros(num_scenes, 8, local_w, local_h)
     global_orientation = torch.zeros(num_scenes, 1).long()
+    object_positions = [infos[env_idx]['object_position'] for env_idx
+         in range(num_scenes)]
 
     for e in range(num_scenes):
         r, c = locs[e, 1], locs[e, 0]
         loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
                         int(c * 100.0 / args.map_resolution)]
-
         local_map[e, 2:, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
+        #TODO Currently only one object is considered. Add for all objects 
+        # Polar coordinate relative to the agent position 
+        dist_agent_obj = object_positions[e][1][0]
+        # Adding agents angle with the relative angle to get the absolute angle. 
+        theta_agent_obj = object_positions[e][1][1] + np.radians(locs[e,2])
+        # Converting into cartesian format
+        z_coordinate = dist_agent_obj * np.cos(theta_agent_obj)
+        x_coordinate = dist_agent_obj * np.sin(theta_agent_obj)
+        object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution +loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
 
     global_input[:, 0:4, :, :] = local_map.detach()
     global_input[:, 4:, :, :] = nn.MaxPool2d(args.global_downscaling)(full_map)
-
-    # g_rollouts.obs[0].copy_(global_input)
-    # g_rollouts.extras[0].copy_(global_orientation)
-
-    # # Run Global Policy (global_goals = Long-Term Goal)
-    # g_value, g_action, g_action_log_prob, g_rec_states = \
-    #     g_policy.act(
-    #         g_rollouts.obs[0],
-    #         g_rollouts.rec_states[0],
-    #         g_rollouts.masks[0],
-    #         extras=g_rollouts.extras[0],
-    #         deterministic=False
-    #     )
-
-    # cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-    # global_goals = [[int(action[0] * local_w), int(action[1] * local_h)]
-    #                 for action in cpu_actions]
-    
-    global_goals = [infos[env_idx]['object_position'] for env_idx
-         in range(num_scenes)]
-    
         
     # Compute planner inputs
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
-        r, c = locs[e, 1], locs[e, 0]
-        loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                        int(c * 100.0 / args.map_resolution)]               
-        z_coordinate = global_goals[e][1][0] * np.cos(global_goals[e][1][1])
-        x_coordinate = global_goals[e][1][0] * np.sin(global_goals[e][1][1])
-        global_goals[e][0] = [x_coordinate * 100.0 / args.map_resolution +loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
-        p_input['goal'] = global_goals[e][0].astype(int) # only the first object
         p_input['map_pred'] = global_input[e, 0, :, :].detach().cpu().numpy()
         p_input['exp_pred'] = global_input[e, 1, :, :].detach().cpu().numpy()
         p_input['pose_pred'] = planner_pose_inputs[e]
+        p_input['goal'] = object_positions[e][0].astype(int) # only the first object
+       
 
     # Output stores local goals as well as the the ground-truth action
     output = envs.get_short_term_goal(planner_inputs)
@@ -334,7 +282,7 @@ def main():
     g_reward = 0
 
     torch.set_grad_enabled(False)
-
+    iter_goal_change = 0
     for ep_num in range(num_episodes):
         for step in range(args.max_episode_length):
             total_num_steps += 1
@@ -369,17 +317,16 @@ def main():
 
             # ------------------------------------------------------------------
             # Env step
-            #print(l_action.numpy())
             obs, rew, done, infos = envs.step(l_action)
 
             l_masks = torch.FloatTensor([0 if x else 1
                                          for x in done]).to(device)
-            #g_masks *= l_masks
             # ------------------------------------------------------------------
 
             # ------------------------------------------------------------------
             # Reinitialize variables when episode ends
             if step == args.max_episode_length - 1:  # Last episode step
+                obs, infos = envs.reset()
                 init_map_and_pose()
                 del last_obs
                 last_obs = obs.detach()
@@ -415,6 +362,9 @@ def main():
             _, _, local_map[:, 0, :, :], local_map[:, 1, :, :], _, local_pose = \
                 nslam_module(last_obs, obs, poses, local_map[:, 0, :, :],
                              local_map[:, 1, :, :], local_pose, build_maps=True)
+            
+            object_positions = [infos[env_idx]['object_position'] for env_idx
+                in range(num_scenes)]
 
             locs = local_pose.cpu().numpy()
             planner_pose_inputs[:, :3] = locs + origins
@@ -425,127 +375,68 @@ def main():
                                 int(c * 100.0 / args.map_resolution)]
 
                 local_map[e, 2:, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
-            # ------------------------------------------------------------------
+                #TODO Currently only one object is considered. Add for all objects 
+                # Polar coordinate relative to the agent position 
+                dist_agent_obj = object_positions[e][1][0]
+                # Adding agents angle with the relative angle to get the absolute angle. 
+                theta_agent_obj = object_positions[e][1][1] + np.radians(locs[e,2])
+                # Converting into cartesian format
+                z_coordinate = dist_agent_obj * np.cos(theta_agent_obj)
+                x_coordinate = dist_agent_obj * np.sin(theta_agent_obj)
+                object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution + loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
+                
+                # # For every global step, update the full and local maps
+                # for e in range(num_scenes):
+                #     full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
+                #         local_map[e]
+                #     full_pose[e] = local_pose[e] + \
+                #                     torch.from_numpy(origins[e]).to(device).float()
 
-            # # ------------------------------------------------------------------
-            # # Global Policy
-            # if l_step == args.num_local_steps - 1:
-            #     # For every global step, update the full and local maps
-            #     for e in range(num_scenes):
-            #         full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
-            #             local_map[e]
-            #         full_pose[e] = local_pose[e] + \
-            #                        torch.from_numpy(origins[e]).to(device).float()
+                #     locs = full_pose[e].cpu().numpy()
+                #     r, c = locs[1], locs[0]
+                #     loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                #                     int(c * 100.0 / args.map_resolution)]
 
-            #         locs = full_pose[e].cpu().numpy()
-            #         r, c = locs[1], locs[0]
-            #         loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-            #                         int(c * 100.0 / args.map_resolution)]
+                #     lmb[e] = get_local_map_boundaries((loc_r, loc_c),
+                #                                         (local_w, local_h),
+                #                                         (full_w, full_h))
 
-            #         lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-            #                                           (local_w, local_h),
-            #                                           (full_w, full_h))
+                #     planner_pose_inputs[e, 3:] = lmb[e]
+                #     origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
+                #                     lmb[e][0] * args.map_resolution / 100.0, 0.]
 
-            #         planner_pose_inputs[e, 3:] = lmb[e]
-            #         origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
-            #                       lmb[e][0] * args.map_resolution / 100.0, 0.]
+                #     local_map[e] = full_map[e, :,
+                #                     lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
+                #     local_pose[e] = full_pose[e] - \
+                #                     torch.from_numpy(origins[e]).to(device).float()
+                # locs = local_pose.cpu().numpy()
+                # for e in range(num_scenes):
+                #     global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
+                #     r, c = locs[e, 1], locs[e, 0]
+                #     loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                #                 int(c * 100.0 / args.map_resolution)]
 
-            #         local_map[e] = full_map[e, :,
-            #                        lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
-            #         local_pose[e] = full_pose[e] - \
-            #                         torch.from_numpy(origins[e]).to(device).float()
-
-            #     locs = local_pose.cpu().numpy()
-            #     for e in range(num_scenes):
-            #         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-            #     global_input[:, 0:4, :, :] = local_map
-            #     global_input[:, 4:, :, :] = \
-            #         nn.MaxPool2d(args.global_downscaling)(full_map)
-
-            #     if False:
-            #         for i in range(4):
-            #             ax[i].clear()
-            #             ax[i].set_yticks([])
-            #             ax[i].set_xticks([])
-            #             ax[i].set_yticklabels([])
-            #             ax[i].set_xticklabels([])
-            #             ax[i].imshow(global_input.cpu().numpy()[0, 4 + i])
-            #         plt.gcf().canvas.flush_events()
-            #         # plt.pause(0.1)
-            #         fig.canvas.start_event_loop(0.001)
-            #         plt.gcf().canvas.flush_events()
-
-            #     # Get exploration reward and metrics
-            #     g_reward = torch.from_numpy(np.asarray(
-            #         [infos[env_idx]['exp_reward'] for env_idx
-            #          in range(num_scenes)])
-            #     ).float().to(device)
-
-            #     if args.eval:
-            #         g_reward = g_reward*50.0 # Convert reward to area in m2
-
-            #     g_process_rewards += g_reward.cpu().numpy()
-            #     g_total_rewards = g_process_rewards * \
-            #                       (1 - g_masks.cpu().numpy())
-            #     g_process_rewards *= g_masks.cpu().numpy()
-            #     per_step_g_rewards.append(np.mean(g_reward.cpu().numpy()))
-
-            #     if np.sum(g_total_rewards) != 0:
-            #         for tr in g_total_rewards:
-            #             g_episode_rewards.append(tr) if tr != 0 else None
-
-            #     if args.eval:
-            #         exp_ratio = torch.from_numpy(np.asarray(
-            #             [infos[env_idx]['exp_ratio'] for env_idx
-            #              in range(num_scenes)])
-            #         ).float()
-
-            #         for e in range(num_scenes):
-            #             explored_area_log[e, ep_num, eval_g_step - 1] = \
-            #                 explored_area_log[e, ep_num, eval_g_step - 2] + \
-            #                 g_reward[e].cpu().numpy()
-            #             explored_ratio_log[e, ep_num, eval_g_step - 1] = \
-            #                 explored_ratio_log[e, ep_num, eval_g_step - 2] + \
-            #                 exp_ratio[e].cpu().numpy()
-
-            #     # Add samples to global policy storage
-            #     g_rollouts.insert(
-            #         global_input, g_rec_states,
-            #         g_action, g_action_log_prob, g_value,
-            #         g_reward, g_masks, global_orientation
-            #     )
-
-            #     # Sample long-term goal from global policy
-            #     g_value, g_action, g_action_log_prob, g_rec_states = \
-            #         g_policy.act(
-            #             g_rollouts.obs[g_step + 1],
-            #             g_rollouts.rec_states[g_step + 1],
-            #             g_rollouts.masks[g_step + 1],
-            #             extras=g_rollouts.extras[g_step + 1],
-            #             deterministic=False
-            #         )
-            #     cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-            #     global_goals = [[int(action[0] * local_w),
-            #                      int(action[1] * local_h)]
-            #                     for action in cpu_actions]
-
-            #     g_reward = 0
-            #     g_masks = torch.ones(num_scenes).float().to(device)
-            # # ------------------------------------------------------------------
-            # global_goals = [infos[env_idx]['object_goal'] for env_idx
-            #         in range(num_scenes)]        
+                #     #TODO Currently only one object is considered. Add for all objects 
+                #     # Polar coordinate relative to the agent position 
+                #     dist_agent_obj = object_positions[e][1][0]
+                #     # Adding agents angle with the relative angle to get the absolute angle. 
+                #     theta_agent_obj = object_positions[e][1][1] + np.radians(locs[e,2])
+                #     # Converting into cartesian format
+                #     z_coordinate = dist_agent_obj * np.cos(theta_agent_obj)
+                #     x_coordinate = dist_agent_obj * np.sin(theta_agent_obj)
+                #     object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution + loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
             # ------------------------------------------------------------------
             # Get short term goal
-            
+
             planner_inputs = [{} for e in range(num_scenes)]
             for e, p_input in enumerate(planner_inputs):
                 p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
                 p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
                 p_input['pose_pred'] = planner_pose_inputs[e]
-                p_input['goal'] = global_goals[e][0].astype(int)  # only the first object
-
-
+                p_input['goal'] = object_positions[e][0].astype(int) # only the first object
+            
             output = envs.get_short_term_goal(planner_inputs)
+            
             # ------------------------------------------------------------------
 
             ### TRAINING
@@ -613,28 +504,6 @@ def main():
                 local_rec_states = local_rec_states.detach_()
             # ------------------------------------------------------------------
 
-            # ------------------------------------------------------------------
-            # # Train Global Policy
-            # if g_step % args.num_global_steps == args.num_global_steps - 1 \
-            #         and l_step == args.num_local_steps - 1:
-            #     if args.train_global:
-            #         g_next_value = g_policy.get_value(
-            #             g_rollouts.obs[-1],
-            #             g_rollouts.rec_states[-1],
-            #             g_rollouts.masks[-1],
-            #             extras=g_rollouts.extras[-1]
-            #         ).detach()
-
-            #         g_rollouts.compute_returns(g_next_value, args.use_gae,
-            #                                    args.gamma, args.tau)
-            #         g_value_loss, g_action_loss, g_dist_entropy = \
-            #             g_agent.update(g_rollouts)
-            #         g_value_losses.append(g_value_loss)
-            #         g_action_losses.append(g_action_loss)
-            #         g_dist_entropies.append(g_dist_entropy)
-            #     g_rollouts.after_update()
-            # ------------------------------------------------------------------
-
             # Finish Training
             torch.set_grad_enabled(False)
             # ------------------------------------------------------------------
@@ -655,20 +524,6 @@ def main():
 
                 log += "\n\tRewards:"
 
-                # if len(g_episode_rewards) > 0:
-                #     log += " ".join([
-                #         " Global step mean/med rew:",
-                #         "{:.4f}/{:.4f},".format(
-                #             np.mean(per_step_g_rewards),
-                #             np.median(per_step_g_rewards)),
-                #         " Global eps mean/med/min/max eps rew:",
-                #         "{:.3f}/{:.3f}/{:.3f}/{:.3f},".format(
-                #             np.mean(g_episode_rewards),
-                #             np.median(g_episode_rewards),
-                #             np.min(g_episode_rewards),
-                #             np.max(g_episode_rewards))
-                #     ])
-
                 log += "\n\tLosses:"
 
                 if args.train_local and len(l_action_losses) > 0:
@@ -678,14 +533,6 @@ def main():
                             np.mean(l_action_losses))
                     ])
 
-                # if args.train_global and len(g_value_losses) > 0:
-                #     log += " ".join([
-                #         " Global Loss value/action/dist:",
-                #         "{:.3f}/{:.3f}/{:.3f},".format(
-                #             np.mean(g_value_losses),
-                #             np.mean(g_action_losses),
-                #             np.mean(g_dist_entropies))
-                #     ])
 
                 if args.train_slam and len(costs) > 0:
                     log += " ".join([
@@ -721,14 +568,6 @@ def main():
 
                     best_local_loss = np.mean(l_action_losses)
 
-                # # Save Global Policy Model
-                # if len(g_episode_rewards) >= 100 and \
-                #         (np.mean(g_episode_rewards) >= best_g_reward) \
-                #         and not args.eval:
-                #     torch.save(g_policy.state_dict(),
-                #                os.path.join(log_dir, "model_best.global"))
-                #     best_g_reward = np.mean(g_episode_rewards)
-
             # Save periodic models
             if (total_num_steps * num_scenes) % args.save_periodic < \
                     num_scenes:
@@ -741,10 +580,7 @@ def main():
                     torch.save(l_policy.state_dict(),
                                os.path.join(dump_dir,
                                             "periodic_{}.local".format(step)))
-                # if args.train_global:
-                #     torch.save(g_policy.state_dict(),
-                #                os.path.join(dump_dir,
-                #                             "periodic_{}.global".format(step)))
+
             # ------------------------------------------------------------------
 
     # Print and save model performance numbers during evaluation

@@ -1,36 +1,45 @@
 from mapUtils import *
-
 if __name__ == "__main__":
     # Source directory to get the maps of gibson dataset
-    map_dir = "data/maps/habitat_val_2400"
+    map_dir = "data/maps/habitat_val_2400_"
     args = get_args()
     full_map_size = args.map_size_cm//args.map_resolution
     #For creating maps ffrom the gibson dataset with different orientation
-    create_map_habitat(map_dir)
-    num_start_pos  = 1
-    num_paths = 20
-    mask_size = 1
+    #create_map_habitat(map_dir)
+    num_start_pos  = 10
+    num_paths = 2
+    mask_size = 10
+    dataset_offset = 0
     # Target directory to store the dataset 
-    file_dir = 'data/maps/val'
+    file_dir = 'data/maps/try'
     if not osp.isdir(file_dir):
         os.mkdir(file_dir)
     for i in range(len(os.listdir(map_dir))):
         map_file_name = osp.join(map_dir, f'map_{i}.png')
         # Reading the black and white image from the source directory
         map = io.imread(map_file_name, as_gray = True)
+        print(map.shape)
         for j in range(num_start_pos):
             start,ValidityCheckerObj = get_random_valid_pos(map)
             for k in range(mask_size): 
                 if (k==0):
                     masked_img = map
                     # Generate paths on the full maps using RRT* only on the full map
+                    ss, planner = create_prm_planner(ValidityCheckerObj)
                     paths = []
                     for p in range(num_paths):
                         path_param = {}
-                        goal,ValidityCheckerObj = get_random_valid_pos(map)
-                        path, path_interpolated, success = get_path(start, goal, ValidityCheckerObj)
+                        goal,_ = get_random_valid_pos(map)
+                        path, path_interpolated, success = get_path(start, goal,ss, planner)
                         path_param['path'] = path
                         path_param['path_interpolated'] = path_interpolated
+                        valid_path = []    
+                        for path in path_param['path_interpolated']:
+                            if check_validity(map,path):
+                                valid_path.append(path)
+                            else:
+                                break
+                        path_param['path_interpolated'] = np.array(valid_path)
                         path_param['success'] = success
                         paths.append(path_param)
                 else:
@@ -38,18 +47,18 @@ if __name__ == "__main__":
                     start_pos = (start[0]/dist_resl, args.map_size_cm//args.map_resolution - start[1]/dist_resl)
                     mask = create_circular_mask(h, w, center = start_pos , radius = (full_map_size/2)*(k)/mask_size)
                     masked_img = map.copy()
-                    masked_img[~mask] = 1
-                env_file_dir = osp.join(file_dir, f'env{i*num_start_pos*mask_size + j*mask_size + k:06d}')
+                    masked_img[~mask] = 0
+                env_file_dir = osp.join(file_dir, f'env{i*num_start_pos*mask_size + j*mask_size + k + dataset_offset:06d}')
                 if not osp.isdir(env_file_dir):
                     os.mkdir(env_file_dir)
-                file_name = osp.join(env_file_dir, f'map_{i*num_start_pos*mask_size + j*mask_size + k}.png')
+                file_name = osp.join(env_file_dir, f'map_{i*num_start_pos*mask_size + j*mask_size + k + dataset_offset}.png')
                 save_plot(masked_img,file_name)    
                 
                 for p in range(num_paths):
                     pickle.dump(paths[p], open(osp.join(env_file_dir,f'path_{p}.p'), 'wb'))
                     # fig = plt.figure()
                     # ax = fig.gca()
-                    # implot = plt.imshow(masked_img)
+                    # implot = plt.imshow(masked_img, cmap='gray')
                     # for path_ in paths[p]['path_interpolated']:
                     #     ax.plot(path_[0]/dist_resl, args.map_size_cm//args.map_resolution - path_[1]/dist_resl,'.-r', linewidth = 5)
                     # plt.axis('off')    

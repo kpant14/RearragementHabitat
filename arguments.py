@@ -32,6 +32,9 @@ def get_args():
     parser.add_argument('--train_slam', type=int, default=1,
                         help="""0: Do not train the Neural SLAM Module
                                 1: Train the Neural SLAM Module (default: 1)""")
+    parser.add_argument('--data_gen', type=int, default=0,
+                        help="""0: Do not generate data for RPN (default: 0)
+                                1: Generate data for RPN """)                            
 
     # Logging, loading models, visualization
     parser.add_argument('--log_interval', type=int, default=10,
@@ -174,7 +177,7 @@ def get_args():
                 args.total_num_scenes = int(args.total_num_scenes)
             elif "gibson" in args.task_config and \
                     "train" in args.split:
-                args.total_num_scenes = 72
+                args.total_num_scenes = 1
             elif "gibson" in args.task_config and \
                     "val_mt" in args.split:
                 args.total_num_scenes = 14

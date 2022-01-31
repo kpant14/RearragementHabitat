@@ -1,3 +1,8 @@
+from cv2 import cuda_Event
+from env import habitat
+from env.habitat.utils.supervision import HabitatMaps 
+from env.habitat import exploration_env
+
 try:
     from ompl import base as ob
     from ompl import geometric as og
@@ -7,9 +12,7 @@ except ImportError:
 from utils.utils import geom2pix, ValidityChecker
 import os
 import torch
-from env import habitat
-from env.habitat.utils.supervision import HabitatMaps 
-from env.habitat import exploration_env
+
 import numpy as np
 from torch.nn import functional as F
 from habitat import Env
@@ -39,15 +42,8 @@ length = 30 # Size of the map
 robot_radius = 0.1
 dist_resl = 0.05
 
-def get_path(start, goal, ValidityCheckerObj=None):
-    '''
-    Get a RRT path from start and goal.
-    :param start: og.State object.
-    :param goal: og.State object.
-    :param ValidityCheckerObj: An object of class ompl.base.StateValidityChecker
-    returns (np.array, np.array, success): A tuple of numpy arrays of a valid path,  
-    interpolated path and whether the plan was successful or not.
-    '''
+
+def create_prm_planner(ValidityCheckerObj):
     mapSize = ValidityCheckerObj.size
     # Define the space
     space = ob.RealVectorStateSpace(2)
@@ -59,17 +55,29 @@ def get_path(start, goal, ValidityCheckerObj=None):
     # Define the SpaceInformation object.
     si = ob.SpaceInformation(space)
     si.setStateValidityChecker(ValidityCheckerObj)
-
-    success = False
     # Create a simple setup
     ss = og.SimpleSetup(si)
+    # # Use RRT*
+    #planner = og.RRTstar(si)
+    planner = og.PRMstar(si)
+    planner.clear()
+    return ss, planner
+
+
+
+def get_path(start, goal, ss, planner, env = 0, plan_time=50):
+    '''
+    Get a RRT path from start and goal.
+    :param start: og.State object.
+    :param goal: og.State object.
+    :param ValidityCheckerObj: An object of class ompl.base.StateValidityChecker
+    returns (np.array, np.array, success): A tuple of numpy arrays of a valid path,  
+    interpolated path and whether the plan was successful or not.
+    '''
+    success = False
 
     # Set the start and goal states:
     ss.setStartAndGoalStates(start, goal, 0.1)
-
-    # # Use RRT*
-    planner = og.RRTstar(si)
-
     ss.setPlanner(planner)
 
     # Attempt to solve within the given time
@@ -78,7 +86,7 @@ def get_path(start, goal, ValidityCheckerObj=None):
     while not ss.haveExactSolutionPath():
         solved = ss.solve(2.0)
         time +=3
-        if time>240:
+        if time>plan_time:
             break
     if ss.haveExactSolutionPath():
         success = True
@@ -99,10 +107,10 @@ def get_path(start, goal, ValidityCheckerObj=None):
     else:
         path = [[start[0], start[1]], [goal[0], goal[1]]]
         path_interpolated = []
-    print(path)
+    print(path, env)
     return np.array(path), np.array(path_interpolated), success
-
-def get_random_valid_pos(CurMap):
+    
+def check_validity(CurMap, state):
     mapSize = CurMap.shape
     # Planning parametersf
     space = ob.RealVectorStateSpace(2)
@@ -117,6 +125,27 @@ def get_random_valid_pos(CurMap):
     # Validity checking
     ValidityCheckerObj = ValidityChecker(si, CurMap=CurMap)
     si.setStateValidityChecker(ValidityCheckerObj)
+    return ValidityCheckerObj.isValid(state)
+
+def get_validity_checker(CurMap, robot_radius=0.1):
+    mapSize = CurMap.shape
+    # Planning parametersf
+    space = ob.RealVectorStateSpace(2)
+    bounds = ob.RealVectorBounds(2)
+    # Set bounds away from  boundary to avoid sampling points outside the map
+    bounds.setLow(2.0)
+    bounds.setHigh(0, mapSize[1]*dist_resl-2) # Set width bounds (x)
+    bounds.setHigh(1, mapSize[0]*dist_resl-2) # Set height bounds (y)
+    space.setBounds(bounds)
+    # Define the SpaceInformation object.
+    si = ob.SpaceInformation(space)
+    # Validity checking
+    ValidityCheckerObj = ValidityChecker(si, CurMap=CurMap,robot_radius=robot_radius)
+    si.setStateValidityChecker(ValidityCheckerObj)
+    return space, ValidityCheckerObj
+
+def get_random_valid_pos(CurMap,robot_radius=0.1):
+    space,ValidityCheckerObj = get_validity_checker(CurMap,robot_radius=robot_radius) 
     # Define the valid location
     valid = ob.State(space)
     valid.random()
@@ -321,11 +350,13 @@ def create_map_habitat(map_dir):
         print("Loading {}".format(config_env.SIMULATOR.SCENE))
         config_env.freeze()
         map = get_gt_map(config_env,full_map_size)
-        for j in range(4):
-            file_name = osp.join(map_dir, f'map_{count}.png')
-            rotated_img = ndimage.rotate(map, j*90)
-            save_plot(rotated_img, file_name)
-            count+=1
+        file_name = osp.join(map_dir, f'map_{i}.png')
+        save_plot(map, file_name)
+        # for j in range(4):
+        #     file_name = osp.join(map_dir, f'map_{count}.png')
+        #     rotated_img = ndimage.rotate(map, j*90)
+        #     save_plot(rotated_img, file_name)
+        #     count+=1
 
 
                 

@@ -118,7 +118,6 @@ def construct_envs(args):
         config_baseline = cfg_baseline()
         #config_baseline = config_env
         baseline_configs.append(config_baseline)
-        
         args_list.append(args)
 
     envs = VectorEnv(

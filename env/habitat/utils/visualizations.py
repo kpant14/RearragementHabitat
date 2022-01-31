@@ -57,7 +57,6 @@ def visualize(fig, ax, img, grid, pos, gt_pos, dump_dir, rank, ep_no, t,
     # Draw predicted agent pose
     x, y, o = pos
     x, y = x * 100.0 / 5.0, grid.shape[1] - y * 100.0 / 5.0
-
     dx = 0
     dy = 0
     fc = 'Red'
@@ -79,6 +78,7 @@ def visualize(fig, ax, img, grid, pos, gt_pos, dump_dir, rank, ep_no, t,
         fn = '{}/episodes/{}/{}/{}-{}-Vis-{}.png'.format(
             dump_dir, (rank + 1), ep_no, rank, ep_no, t)
         plt.savefig(fn)
+        #plt.imsave(fn,grid)
        
 
 
@@ -98,6 +98,19 @@ def fill_color(colored, mat, color):
 
 def get_colored_map(mat, collision_map, visited, visited_gt, goal,
                     explored, gt_map, gt_map_explored):
+    # m, n = mat.shape
+    # colored = np.ones((m, n, 3))
+    # #White for explored map
+    # current_palette = [(1,1,1)]
+    # colored = fill_color(colored, explored, current_palette[0])  
+    # #Balck for th obstacle map
+    # current_palette = [(0,0,0)]
+    # colored = fill_color(colored, mat, current_palette[0])      
+    # colored = 1 - colored
+    # colored *= 255
+    # colored = colored.astype(np.uint8)
+    
+    
     m, n = mat.shape
     colored = np.zeros((m, n, 3))
     pal = sns.color_palette("Paired")

@@ -19,6 +19,7 @@ from transformer import Models, Optim
 from dataLoader import PathDataLoader, PaddedSequence#, PathMixedDataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+import time
 
 def focal_loss(predVals, trueLabels, gamma, eps=1e-8):
     '''
@@ -68,17 +69,18 @@ def train_epoch(model, trainingData, optimizer, device):
     total_n_correct = 0
     # Train for a single epoch.
     for batch in tqdm(trainingData, mininterval=2):
-        
         optimizer.zero_grad()
         encoder_input = batch['map'].float().to(device)
+        anchor = batch['anchor'].to(device)
+        labels =  batch['labels'].to(device)
+        lengths =  batch['length'].to(device)
         predVal = model(encoder_input)
 
         # Calculate the cross-entropy loss
         loss, n_correct = cal_performance(
-            predVal, batch['anchor'].to(device), 
-            batch['labels'].to(device), 
-            batch['length'].to(device)
-        )
+            predVal, anchor , labels , lengths
+            )
+        
         loss.backward()
         optimizer.step_and_update_lr()
         total_loss +=loss.item()
@@ -126,23 +128,12 @@ def check_data_folders(folder):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batchSize', help="Batch size per GPU", type=int, default = 100)
-    parser.add_argument('--mazeDir', help="Directory with training and validation data for Maze", default=None)
-    parser.add_argument('--forestDir', help="Directory with training and validation data for Random Forest", default=None)
+    parser.add_argument('--batchSize', help="Batch size per GPU", type=int, default = 120)
+    parser.add_argument('--train', help="Requires training", type=int, default = 1)
+    parser.add_argument('--modelFolder', help="path to pretrained model", default = None)
     parser.add_argument('--fileDir', help="Directory to save training Data",default = 'pretrained_models/')
     args = parser.parse_args()
 
-    # maze=False
-    # if args.mazeDir is not None:
-    #     check_data_folders(args.mazeDir)
-    #     maze=True
-    # forest=False
-    # if args.forestDir is not None:
-    #     check_data_folders(args.forestDir)
-    #     forest=True
-
-    # assert forest or maze, "Need to provide data folder for atleast one kind of environment"
-    # dataFolder = args.mazeDir if not(maze and forest) and maze else args.forestDir
     dataFolder = 'data/maps/'
     print(f"Using data from {dataFolder}")
     batch_size = args.batchSize
@@ -157,21 +148,37 @@ if __name__ == "__main__":
 
     torch_seed = np.random.randint(low=0, high=1000)
     torch.manual_seed(torch_seed)
+    modelFolder = args.modelFolder
     
-    model_args = dict(
-        n_layers=6, 
-        n_heads=3, 
-        d_k=512, 
-        d_v=256, 
-        d_model=512, 
-        d_inner=1024, 
-        pad_idx=None,
-        n_position=24*24, 
-        dropout=0.1,
-        train_shape=[24, 24],
-    )
-    
-    transformer = Models.Transformer(**model_args)
+
+    if modelFolder != None:
+        # epoch = 164
+        # modelFile = osp.join(args.modelFolder, f'model_params.json')
+        # model_args = json.load(open(modelFile))
+        # transformer = Models.Transformer(**model_args)
+        # checkpoint = torch.load(osp.join(modelFolder, f'model_epoch_{epoch}.pkl'))
+        # transformer.load_state_dict(checkpoint['state_dict'])
+
+        modelFile = osp.join(args.modelFolder, f'model_params.json')
+        model_args = json.load(open(modelFile))
+        transformer = Models.Transformer(**model_args)
+        checkpoint = torch.load(osp.join(modelFolder, f'model_weights.pkl'))
+        transformer.load_state_dict(checkpoint['state_dict'])
+    else:    
+        model_args = dict(
+            n_layers=6, 
+            n_heads=3, 
+            d_k=512, 
+            d_v=256, 
+            d_model=512, 
+            d_inner=1024, 
+            pad_idx=None,
+            n_position=24*24, 
+            dropout=0.1,
+            train_shape=[24, 24],
+        )
+        
+        transformer = Models.Transformer(**model_args)
 
     if torch.cuda.device_count() > 1:
         print("Using ", torch.cuda.device_count(), "GPUs")
@@ -186,56 +193,21 @@ if __name__ == "__main__":
         d_model = 256,
         n_warmup_steps = 3200
     )
-    # # Training with Mixed samples
-    # if maze and forest:
-    #     from toolz.itertoolz import partition
-    #     trainDataset= PathMixedDataLoader(
-    #         envListForest=list(range(10)),
-    #         dataFolderForest=osp.join(args.forestDir, 'train'),
-    #         envListMaze=list(range(10)),
-    #         dataFolderMaze=osp.join(args.mazeDir, 'train')
-    #     )
-    #     allTrainingData = trainDataset.indexDictForest + trainDataset.indexDictMaze
-    #     batch_sampler_train = list(partition(batch_size, allTrainingData))
-    #     trainingData = DataLoader(trainDataset, num_workers=15, batch_sampler=batch_sampler_train, collate_fn=PaddedSequence)
-
-    #     valDataset = PathMixedDataLoader(
-    #         envListForest=list(range(10)),
-    #         dataFolderForest=osp.join(args.forestDir, 'val'),
-    #         envListMaze=list(range(10)),
-    #         dataFolderMaze=osp.join(args.mazeDir, 'val')
-    #     )
-    #     allValData = valDataset.indexDictForest+valDataset.indexDictMaze
-    #     batch_sampler_val = list(partition(batch_size, allValData))
-    #     validationData = DataLoader(valDataset, num_workers=5, batch_sampler=batch_sampler_val, collate_fn=PaddedSequence)
-    # else:        
-    #     trainDataset = PathDataLoader(
-    #         env_list=list(range(1750)),
-    #         dataFolder=osp.join(dataFolder, 'train')
-    #     )
-    #     trainingData = DataLoader(trainDataset, num_workers=15, collate_fn=PaddedSequence, batch_size=batch_size)
-
-    #     # Validation Data
-    #     valDataset = PathDataLoader(
-    #         env_list=list(range(2500)),
-    #         dataFolder=osp.join(dataFolder, 'val')
-    #     )
-    #     validationData = DataLoader(valDataset, num_workers=5, collate_fn=PaddedSequence, batch_size=batch_size)
             
     trainDataset = PathDataLoader(
-        env_list=list(range(140)),
-        dataFolder=osp.join(dataFolder, 'train')
+        env_list=list(range(3500)),
+        dataFolder=osp.join(dataFolder, 'train_35')
     )
-    trainingData = DataLoader(trainDataset, num_workers=15, collate_fn=PaddedSequence, batch_size=batch_size)
+    trainingData = DataLoader(trainDataset, shuffle=True, num_workers=15, collate_fn=PaddedSequence, batch_size=batch_size)
 
     # Validation Data
     valDataset = PathDataLoader(
-        env_list=list(range(40)),
-        dataFolder=osp.join(dataFolder, 'val')
+        env_list=list(range(1000)),
+        dataFolder=osp.join(dataFolder, 'val_35')
     )
-    validationData = DataLoader(valDataset, num_workers=5, collate_fn=PaddedSequence, batch_size=batch_size)
+    validationData = DataLoader(valDataset, shuffle=True, num_workers=12, collate_fn=PaddedSequence, batch_size=batch_size)
     # Increase number of epochs.
-    n_epochs = 1000
+    n_epochs = 100
     results = {}
     train_loss = []
     val_loss = []
@@ -251,40 +223,45 @@ if __name__ == "__main__":
     )
     writer = SummaryWriter(log_dir=trainDataFolder)
     for n in range(n_epochs):
-        train_total_loss, train_n_correct = train_epoch(transformer, trainingData, optimizer, device)
+        if (args.train == 1):
+            train_total_loss, train_n_correct = train_epoch(transformer, trainingData, optimizer, device)
         val_total_loss, val_n_correct = eval_epoch(transformer, validationData, device)
-        print(f"Epoch {n} Loss: {train_total_loss}")
-        print(f"Epoch {n} Loss: {val_total_loss}")
+        if (args.train == 1):
+            print(f"Epoch {n} Train Loss: {train_total_loss}")
+        print(f"Epoch {n} Eval Loss: {val_total_loss}")
         print(f"Epoch {n} Accuracy {val_n_correct/len(valDataset)}")
 
         # Log data.
-        train_loss.append(train_total_loss)
+        if (args.train == 1):
+            train_loss.append(train_total_loss)
+            train_n_correct_list.append(train_n_correct)
         val_loss.append(val_total_loss)
-        train_n_correct_list.append(train_n_correct)
         val_n_correct_list.append(val_n_correct)
 
-        if (n+1)%5==0:
-            if isinstance(transformer, nn.DataParallel):
-                state_dict = transformer.module.state_dict()
-            else:
-                state_dict = transformer.state_dict()
-            states = {
-                'state_dict': state_dict,
-                'optimizer': optimizer._optimizer.state_dict(),
-                'torch_seed': torch_seed
-            }
-            torch.save(states, osp.join(trainDataFolder, 'model_epoch_{}.pkl'.format(n)))
-        
-        pickle.dump(
-            {
-                'trainLoss': train_loss, 
-                'valLoss':val_loss, 
-                'trainNCorrect':train_n_correct_list, 
-                'valNCorrect':val_n_correct_list
-            }, 
-            open(osp.join(trainDataFolder, 'progress.pkl'), 'wb')
-            )
-        writer.add_scalar('Loss/train', train_total_loss, n)
-        writer.add_scalar('Loss/test', val_total_loss, n)
-        writer.add_scalar('Accuracy/train', train_n_correct/len(trainDataset), n)
-        writer.add_scalar('Accuracy/test', val_n_correct/len(valDataset), n)
+
+        if(args.train==1):
+            if (n+1)%5==0:
+                if isinstance(transformer, nn.DataParallel):
+                    state_dict = transformer.module.state_dict()
+                else:
+                    state_dict = transformer.state_dict()
+                states = {
+                    'state_dict': state_dict,
+                    'optimizer': optimizer._optimizer.state_dict(),
+                    'torch_seed': torch_seed
+                }
+                torch.save(states, osp.join(trainDataFolder, 'model_epoch_{}.pkl'.format(n)))
+            
+            pickle.dump(
+                {
+                    'trainLoss': train_loss, 
+                    'valLoss':val_loss, 
+                    'trainNCorrect':train_n_correct_list, 
+                    'valNCorrect':val_n_correct_list
+                }, 
+                open(osp.join(trainDataFolder, 'progress.pkl'), 'wb')
+                )
+            writer.add_scalar('Loss/train', train_total_loss, n)
+            writer.add_scalar('Loss/test', val_total_loss, n)
+            writer.add_scalar('Accuracy/train', train_n_correct/len(trainDataset), n)
+            writer.add_scalar('Accuracy/test', val_n_correct/len(valDataset), n)

@@ -113,16 +113,23 @@ class Encoder(nn.Module):
         # the output of the network has receptive field across the entire map.
         # NOTE: pytorch doesn't have a good way to ensure automatic padding. This
         # allows only for a select few map sizes to be solved using this method.
-        self.to_patch_embedding = nn.Sequential(
-            nn.Conv2d(2, 6, kernel_size=5),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(),
-            nn.Conv2d(6, 16, kernel_size=5),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(),
-            nn.Conv2d(16, d_model, kernel_size=5, stride=5, padding=3)
-        )
-
+        # self.to_patch_embedding = nn.Sequential(
+        #     nn.Conv2d(2, 16, kernel_size=5),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.ReLU(),
+        #     # nn.Conv2d(6, 16, kernel_size=5),
+        #     # nn.MaxPool2d(kernel_size=2),
+        #     # nn.ReLU(),
+        #     nn.Conv2d(16, d_model, kernel_size=5, stride=5, padding=3)
+        # )
+        self.conv1 = nn.Conv2d(2, 6, kernel_size=5)
+        self.max1 = nn.MaxPool2d(kernel_size=2)
+        self.relu1 = nn.ReLU()
+        self.conv2 = nn.Conv2d(6, 16, kernel_size=5)
+        self.max2 = nn.MaxPool2d(kernel_size=2)
+        self.relu2 = nn.ReLU() 
+        self.conv3 = nn.Conv2d(16, d_model, kernel_size=5, stride=5, padding=3)
+        
         self.reorder_dims = Rearrange('b c h w -> b (h w) c')
         # Position Encoding.
         # NOTE: Current setup for adding position encoding after patch Embedding.
@@ -144,7 +151,28 @@ class Encoder(nn.Module):
         :param returns_attns: If True, the model returns slf_attns at each layer
         '''
         enc_slf_attn_list = []
-        enc_output = self.to_patch_embedding(input_map)
+        print(input_map.size())
+        enc_output = self.conv1(input_map)
+        print(enc_output.size())
+        enc_output = self.max1(enc_output)
+        print(enc_output.size())
+        enc_output = self.relu1(enc_output)
+        print(enc_output.size())
+        enc_output = self.conv2(enc_output)
+        print(enc_output.size())
+        enc_output = self.max2(enc_output)
+        print(enc_output.size())
+        enc_output = self.relu2(enc_output)
+        print(enc_output.size())
+
+        enc_output = self.conv3(enc_output)
+        print(enc_output.size())
+        print('end')
+
+        
+        
+        
+        #enc_output = self.to_patch_embedding(input_map)
         conv_map_shape = enc_output.shape[-2:]
         enc_output = self.reorder_dims(enc_output)
 
