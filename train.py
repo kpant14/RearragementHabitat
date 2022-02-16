@@ -16,29 +16,10 @@ from tqdm import tqdm
 from os import path as osp
 
 from transformer import Models, Optim
-from dataLoader import PathDataLoader, PaddedSequence#, PathMixedDataLoader
+from dataLoader import PathDataLoader, PaddedSequence
 from torch.utils.tensorboard import SummaryWriter
-
 import time
 
-def focal_loss(predVals, trueLabels, gamma, eps=1e-8):
-    '''
-    A function to calculate the focal loss as mentioned in 
-    https://arxiv.org/pdf/1708.02002.pdf
-    :param predVals: The output of the final linear layer.
-    :param trueLabels: The true labels
-    :param gamma: The hyperparameter of the loss function
-    :param eps: A scalar value to enforce numerical stability.
-    :returns float: The loss value
-    '''
-    input_soft = F.softmax(predVals, dim=1) + eps
-    target_one_hot = torch.zeros((trueLabels.shape[0], 2), device=trueLabels.device)
-    target_one_hot.scatter_(1, trueLabels.unsqueeze(1), 1.0)
-
-    weight = torch.pow(-input_soft + 1., gamma)
-    focal = -weight*torch.log(input_soft)
-    loss = torch.sum(target_one_hot*focal, dim=1).sum()
-    return loss
 
 def cal_performance(predVals, anchorPoints, trueLabels, lengths):
     '''
@@ -52,6 +33,7 @@ def cal_performance(predVals, anchorPoints, trueLabels, lengths):
     n_correct = 0
     total_loss = 0
     for predVal, anchorPoint, trueLabel, length in zip(predVals, anchorPoints, trueLabels, lengths):
+        #print(anchorPoint)
         predVal = predVal.index_select(0, anchorPoint[:length])
         trueLabel = trueLabel[:length]
         loss = F.cross_entropy(predVal, trueLabel)
@@ -75,12 +57,11 @@ def train_epoch(model, trainingData, optimizer, device):
         labels =  batch['labels'].to(device)
         lengths =  batch['length'].to(device)
         predVal = model(encoder_input)
-
+        
         # Calculate the cross-entropy loss
         loss, n_correct = cal_performance(
             predVal, anchor , labels , lengths
             )
-        
         loss.backward()
         optimizer.step_and_update_lr()
         total_loss +=loss.item()
@@ -95,7 +76,6 @@ def eval_epoch(model, validationData, device):
     :param validataionData: The set of validation data.
     :param device: cpu/cuda to be used.
     '''
-
     model.eval()
     total_loss = 0.0
     total_n_correct = 0.0
@@ -134,7 +114,7 @@ if __name__ == "__main__":
     parser.add_argument('--fileDir', help="Directory to save training Data",default = 'pretrained_models/')
     args = parser.parse_args()
 
-    dataFolder = 'data/maps/'
+    dataFolder = 'tmp/data/exp1/'
     print(f"Using data from {dataFolder}")
     batch_size = args.batchSize
     device = 'cpu'
@@ -172,13 +152,10 @@ if __name__ == "__main__":
             d_v=256, 
             d_model=512, 
             d_inner=1024, 
-            pad_idx=None,
-            n_position=24*24, 
             dropout=0.1,
-            train_shape=[24, 24],
         )
-        
         transformer = Models.Transformer(**model_args)
+        
 
     if torch.cuda.device_count() > 1:
         print("Using ", torch.cuda.device_count(), "GPUs")
@@ -195,17 +172,18 @@ if __name__ == "__main__":
     )
             
     trainDataset = PathDataLoader(
-        env_list=list(range(3500)),
-        dataFolder=osp.join(dataFolder, 'train_35')
+        env_list=list(range(1,2)),
+        dataFolder=osp.join(dataFolder, '')
     )
     trainingData = DataLoader(trainDataset, shuffle=True, num_workers=15, collate_fn=PaddedSequence, batch_size=batch_size)
 
     # Validation Data
     valDataset = PathDataLoader(
-        env_list=list(range(1000)),
-        dataFolder=osp.join(dataFolder, 'val_35')
+        env_list=list(range(2,4)),
+        dataFolder=osp.join(dataFolder, '')
     )
     validationData = DataLoader(valDataset, shuffle=True, num_workers=12, collate_fn=PaddedSequence, batch_size=batch_size)
+    
     # Increase number of epochs.
     n_epochs = 100
     results = {}
@@ -214,6 +192,9 @@ if __name__ == "__main__":
     train_n_correct_list = []
     val_n_correct_list = []
     trainDataFolder  = args.fileDir
+    
+    
+    
     # Save the model parameters as .json file
     json.dump(
         model_args, 
@@ -221,6 +202,7 @@ if __name__ == "__main__":
         sort_keys=True,
         indent=4
     )
+    
     writer = SummaryWriter(log_dir=trainDataFolder)
     for n in range(n_epochs):
         if (args.train == 1):

@@ -386,45 +386,46 @@ def main():
                 object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution + loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
                 
                 # # For every global step, update the full and local maps
-                # for e in range(num_scenes):
-                #     full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
-                #         local_map[e]
-                #     full_pose[e] = local_pose[e] + \
-                #                     torch.from_numpy(origins[e]).to(device).float()
+            # if l_step == args.num_local_steps - 1:    
+            #     for e in range(num_scenes):
+            #         full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
+            #             local_map[e]
+            #         full_pose[e] = local_pose[e] + \
+            #                         torch.from_numpy(origins[e]).to(device).float()
 
-                #     locs = full_pose[e].cpu().numpy()
-                #     r, c = locs[1], locs[0]
-                #     loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                #                     int(c * 100.0 / args.map_resolution)]
+            #         locs = full_pose[e].cpu().numpy()
+            #         r, c = locs[1], locs[0]
+            #         loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+            #                         int(c * 100.0 / args.map_resolution)]
 
-                #     lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-                #                                         (local_w, local_h),
-                #                                         (full_w, full_h))
+            #         lmb[e] = get_local_map_boundaries((loc_r, loc_c),
+            #                                             (local_w, local_h),
+            #                                             (full_w, full_h))
 
-                #     planner_pose_inputs[e, 3:] = lmb[e]
-                #     origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
-                #                     lmb[e][0] * args.map_resolution / 100.0, 0.]
+            #         planner_pose_inputs[e, 3:] = lmb[e]
+            #         origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
+            #                         lmb[e][0] * args.map_resolution / 100.0, 0.]
 
-                #     local_map[e] = full_map[e, :,
-                #                     lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
-                #     local_pose[e] = full_pose[e] - \
-                #                     torch.from_numpy(origins[e]).to(device).float()
-                # locs = local_pose.cpu().numpy()
-                # for e in range(num_scenes):
-                #     global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-                #     r, c = locs[e, 1], locs[e, 0]
-                #     loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                #                 int(c * 100.0 / args.map_resolution)]
+            #         local_map[e] = full_map[e, :,
+            #                         lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
+            #         local_pose[e] = full_pose[e] - \
+            #                         torch.from_numpy(origins[e]).to(device).float()
+            #     locs = local_pose.cpu().numpy()
+            #     for e in range(num_scenes):
+            #         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
+            #         r, c = locs[e, 1], locs[e, 0]
+            #         loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+            #                     int(c * 100.0 / args.map_resolution)]
 
-                #     #TODO Currently only one object is considered. Add for all objects 
-                #     # Polar coordinate relative to the agent position 
-                #     dist_agent_obj = object_positions[e][1][0]
-                #     # Adding agents angle with the relative angle to get the absolute angle. 
-                #     theta_agent_obj = object_positions[e][1][1] + np.radians(locs[e,2])
-                #     # Converting into cartesian format
-                #     z_coordinate = dist_agent_obj * np.cos(theta_agent_obj)
-                #     x_coordinate = dist_agent_obj * np.sin(theta_agent_obj)
-                #     object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution + loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
+            #         #TODO Currently only one object is considered. Add for all objects 
+            #         # Polar coordinate relative to the agent position 
+            #         dist_agent_obj = object_positions[e][1][0]
+            #         # Adding agents angle with the relative angle to get the absolute angle. 
+            #         theta_agent_obj = object_positions[e][1][1] + np.radians(locs[e,2])
+            #         # Converting into cartesian format
+            #         z_coordinate = dist_agent_obj * np.cos(theta_agent_obj)
+            #         x_coordinate = dist_agent_obj * np.sin(theta_agent_obj)
+            #         object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution + loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
             # ------------------------------------------------------------------
             # Get short term goal
 

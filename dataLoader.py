@@ -14,7 +14,7 @@ from einops import rearrange
 
 from torch.nn.utils.rnn import pad_sequence
 
-#from utils.utils import geom2pix
+from utils.utils import geom2pix
 
 def PaddedSequence(batch):
     '''
@@ -23,70 +23,26 @@ def PaddedSequence(batch):
     '''
     data = {}
     data['map'] = torch.cat([batch_i['map'][None, :] for batch_i in batch if batch_i is not None])
+    data['rgb'] = torch.cat([batch_i['rgb'][None, :] for batch_i in batch if batch_i is not None])
+    data['depth'] = torch.cat([batch_i['depth'][None, :] for batch_i in batch if batch_i is not None])
     data['anchor'] = pad_sequence([batch_i['anchor'] for batch_i in batch if batch_i is not None], batch_first=True)
     data['labels'] = pad_sequence([batch_i['labels'] for batch_i in batch if batch_i is not None], batch_first=True)
     data['length'] = torch.tensor([batch_i['anchor'].shape[0] for batch_i in batch if batch_i is not None])
     return data
 
+def get_grid_points(res=0.05, size=(240,240)):
+    # Convert Anchor points to points on the axis.
+    X = np.arange(0, size[0], 20) * res
+    Y = (size[1] - np.arange(0, size[1], 20)) * res
+    grid_2d = np.meshgrid(X, Y)
+    grid_points = rearrange(grid_2d, 'c h w->(h w) c')
+    return grid_points
 
-def PaddedSequenceUnet(batch):
-    '''
-    This should be passed to DataLoader class to collate batched samples with various length.
-    :param batch: The batch to consolidate
-    '''
-    data = {}
-    data['map'] = torch.cat([batch_i['map'][None, :] for batch_i in batch if batch_i is not None])
-    data['mask'] = torch.cat([batch_i['mask'][None, :] for batch_i in batch if batch_i is not None])
-    return data
-
-
-def PaddedSequenceMPnet(batch):
-    '''
-    This should be passed to the dataLoader class to collate batched samples with various lengths
-    :param batch: The batch to consolidate.
-    '''
-    data = {}
-    data['map'] = torch.cat([batch_i['map'][None, :, :] for batch_i in batch])
-    data['inputs'] = pad_sequence([batch_i['inputs'] for batch_i in batch], batch_first=True)
-    data['targets'] = pad_sequence([batch_i['targets'] for batch_i in batch], batch_first=True)
-    data['length'] = torch.tensor([batch_i['inputs'].size(0) for batch_i in batch])
-    return data
-
-#map_size = (480, 480)
-receptive_field = 32
-res = 0.05 # meter/pixels
-
-# Convert Anchor points to points on the axis.
-X = np.arange(4, 24*20+4, 20)*res
-Y = 24-np.arange(4, 24*20+4, 20)*res
-
-grid_2d = np.meshgrid(X, Y)
-grid_points = rearrange(grid_2d, 'c h w->(h w) c')
-hashTable = [(20*r+4, 20*c+4) for c in range(24) for r in range(24)]
-
-def geom2pix(pos, res=0.05, size=(480, 480)):
-    """
-    Convert geometrical position to pixel co-ordinates. The origin 
-    is assumed to be at [image_size[0]-1, 0].
-    :param pos: The (x,y) geometric co-ordinates.
-    :param res: The distance represented by each pixel.
-    :param size: The size of the map image
-    :returns (int, int): The associated pixel co-ordinates.
-    NOTE: The Pixel co-ordinates are represented as follows:
-    (0,0)------ X ----------->|
-    |                         |  
-    |                         |  
-    |                         |  
-    |                         |  
-    Y                         |
-    |                         |
-    |                         |  
-    v                         |  
-    ---------------------------  
-    """
-    return (np.int(np.floor(pos[0]/res)), np.int(size[0]-1-np.floor(pos[1]/res)))
+def get_hash_table(res=0.05, size=(240,240)):
+    hashTable = [(20*r, 20*c) for c in range(int(size[1]*res)) for r in range(int(size[0]*res))]
+    return hashTable
     
-def geom2pixMatpos(pos, res=0.05, size=(480, 480)):
+def geom2pix_mat_pos(pos, res=0.05, size=(240,240), receptive_field=32):
     """
     Find the nearest index of the discrete map state.
     :param pos: The (x,y) geometric co-ordinates.
@@ -94,24 +50,11 @@ def geom2pixMatpos(pos, res=0.05, size=(480, 480)):
     :param size: The size of the map image
     :returns (int, int): The associated pixel co-ordinates.
     """
-    indices = np.where(np.linalg.norm(grid_points-pos, axis=1)<=receptive_field*res*0.7)
+    indices = np.where(np.linalg.norm(get_grid_points()-pos, axis=1)<=receptive_field*res*0.7)
     return indices
 
-def geom2pixMatneg(pos, res=0.05, size=(480, 480), num=1):
-    """
-    Find the nearest index of the discrete map state.
-    :param pos: The (x,y) geometric co-ordinates.
-    :param res: The distance represented by each pixel.
-    :param size: The size of the map image
-    :param num: The number of random sample index to select.
-    :returns (int, int): The associated pixel co-ordinates.
-    """
-    dist = np.linalg.norm(grid_points-pos, axis=1)
-    indices, = np.where(dist>receptive_field*res*0.7)
-    indices = np.random.choice(indices, size=num)
-    return indices,
 
-def get_encoder_input(InputMap, goal_pos, start_pos):
+def get_encoder_input(explored_map, collision_map , goal_pos, start_pos, receptive_field=32):
     '''
     Returns the input map appended with the goal, and start position encoded.
     :param InputMap: The grayscale map
@@ -119,7 +62,7 @@ def get_encoder_input(InputMap, goal_pos, start_pos):
     :param start_pos: The start pos of the robot on the costmap.
     :returns np.array: The map concatentated with the encoded start and goal pose.
     '''
-    map_size = InputMap.shape
+    map_size = explored_map.shape
     assert len(map_size) == 2, "This only works for 2D maps"
     
     context_map = np.zeros(map_size)
@@ -134,7 +77,7 @@ def get_encoder_input(InputMap, goal_pos, start_pos):
     start_end_y = min( map_size[1], start_pos[0]+ receptive_field//2)
     start_end_x = min( map_size[0], start_pos[1]+ receptive_field//2)
     context_map[start_start_x:start_end_x, start_start_y:start_end_y] = -1.0
-    return torch.as_tensor(np.concatenate((InputMap[None, :], context_map[None, :])))
+    return torch.as_tensor(np.concatenate((explored_map[None, :], collision_map[None,:], context_map[None, :])))
 
 
 class PathDataLoader(Dataset):
@@ -158,7 +101,7 @@ class PathDataLoader(Dataset):
         self.env_list = env_list
         self.indexDict = [(envNum, int(i)) 
             for envNum in env_list 
-                for i in range(len(os.listdir(osp.join(dataFolder, f'env{envNum:06d}')))-1)
+                for i in range(len(os.listdir(osp.join(dataFolder, f'env{envNum}'))))
             ]
         self.dataFolder = dataFolder
     
@@ -172,35 +115,36 @@ class PathDataLoader(Dataset):
         returns dict: A dictonary of the encoded map and target points.
         '''
         env, idx_sample = self.indexDict[idx]
-        mapEnvg = skimage.io.imread(osp.join(self.dataFolder, f'env{env:06d}', f'map_{env}.png'), as_gray=True)
-        
-        with open(osp.join(self.dataFolder, f'env{env:06d}', f'path_{idx_sample}.p'), 'rb') as f:
+        with open(osp.join(self.dataFolder, f'env{env}', f'data{idx_sample:06d}.p'), 'rb') as f:
             data = pickle.load(f)
 
-        if data['success']:
-            path = data['path_interpolated']
-            goal = data['path'][-1, :]
-            # Mark goal region
-            goal_index = geom2pix(goal)
-            #goal_index = geom2pix(path[-1, :])
-            start_index = geom2pix(path[0, :])
-            mapEncoder = get_encoder_input(mapEnvg, goal_index, start_index)            
+        explored_map = data['explored_map']
+        collison_map = data['collision_map']
+        map_size = collison_map.shape
+        path = [data['next_waypoint']] #data['path_to_go']
+        goal_index = geom2pix(data['path_to_go'][-1, :], size = (240,240))
+        start_index = (data['curr_loc'][1], data['curr_loc'][0]) 
+        
+        mapEncoder = get_encoder_input(explored_map, collison_map , goal_index, start_index)            
 
-            AnchorPointsPos = []
-            for pos in path:
-                indices, = geom2pixMatpos(pos, size = mapEnvg.shape)
-                for index in indices:
-                    if index not in AnchorPointsPos:
-                        AnchorPointsPos.append(index)
+        AnchorPointsPos = []
+        for pos in path:
+            indices, = geom2pix_mat_pos(pos, size = map_size)
+            #print (pos,indices)
+            for index in indices:
+                if index not in AnchorPointsPos:
+                    AnchorPointsPos.append(index)
 
-            backgroundPoints = list(set(range(len(hashTable)))-set(AnchorPointsPos))
-            numBackgroundSamp = min(len(backgroundPoints), 2*len(AnchorPointsPos))
-            AnchorPointsNeg = np.random.choice(backgroundPoints, size=numBackgroundSamp, replace=False).tolist()
-            anchor = torch.cat((torch.tensor(AnchorPointsPos), torch.tensor(AnchorPointsNeg)))
-            labels = torch.zeros_like(anchor)
-            labels[:len(AnchorPointsPos)] = 1
-            return {
-                'map':torch.as_tensor(mapEncoder), 
-                'anchor':anchor, 
-                'labels':labels
-            }
+        backgroundPoints = list(set(range(len(get_hash_table())))-set(AnchorPointsPos))
+        numBackgroundSamp = min(len(backgroundPoints), 2*len(AnchorPointsPos))
+        AnchorPointsNeg = np.random.choice(backgroundPoints, size=numBackgroundSamp, replace=False).tolist()
+        anchor = torch.cat((torch.tensor(AnchorPointsPos), torch.tensor(AnchorPointsNeg)))
+        labels = torch.zeros_like(anchor)
+        labels[:len(AnchorPointsPos)] = 1
+        return {
+            'map':torch.as_tensor(mapEncoder),
+            'rgb': torch.as_tensor(data['curr_rgb']),
+            'depth': torch.as_tensor(data['curr_depth']), 
+            'anchor':anchor, 
+            'labels':labels
+        }
