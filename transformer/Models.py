@@ -7,14 +7,15 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint
 from transformer.Layers import EncoderLayer, DecoderLayer
-
+import torchvision
+from torchvision import datasets, models, transforms
 from einops.layers.torch import Rearrange
-from einops import rearrange
+from einops import rearrange, repeat
 import math
 from typing import Tuple
 import torch
 from torch import nn, Tensor
-
+from torchsummary import summary
 
 class PositionalEncoding(nn.Module):
 
@@ -37,7 +38,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class Encoder_map(nn.Module):
+class EncoderMap(nn.Module):
     ''' The encoder of the planner.
     '''
 
@@ -114,7 +115,7 @@ class Transformer(nn.Module):
         '''
         super().__init__()
 
-        self.encoder_map = Encoder_map(
+        self.encoder_map = EncoderMap(
             n_layers=n_layers, 
             n_heads=n_heads, 
             d_k=d_k, 
@@ -123,15 +124,17 @@ class Transformer(nn.Module):
             d_inner=d_inner, 
             dropout=dropout, 
         )
-
+        resnet18 = models.resnet18(pretrained=True)
+        #Taking features from the second last layer of the Resnet18 Network
+        self.rgb_model = torch.nn.Sequential(*(list(resnet18.children())[:-1]))
         # Last linear layer for prediction
-        self.classPred = nn.Sequential(
+        self.class_pred = nn.Sequential(
             Rearrange('b c d_model -> (b c) d_model 1 1'),
             nn.Conv2d(512, 3, kernel_size=1),
             Rearrange('bc d 1 1 -> bc d')
         )
 
-    def forward(self, input_map):
+    def forward(self, input_map, rgb):
         '''
         The callback function.
         :param input_map:
@@ -140,7 +143,11 @@ class Transformer(nn.Module):
         :param cur_index: The current anchor point of patch.
         '''
         enc_output = self.encoder_map(input_map)
-        seq_logit = self.classPred(enc_output)
+        rgb_output  = self.rgb_model(rgb)
+        rgb_output = rearrange(rgb_output,'b c 1 1 -> b 1 c')
+        combined_output = torch.cat((enc_output,rgb_output), dim = 1)
+        seq_logit = self.class_pred(combined_output)
+        #seq_logit = self.classPred(enc_output)
         batch_size = input_map.shape[0]
         return rearrange(seq_logit, '(b c) d -> b c d', b=batch_size)
 

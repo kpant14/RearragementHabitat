@@ -17,6 +17,7 @@ from .habitat_lab.habitat_baselines.config.default import get_config as cfg_base
 def make_env_fn(args, config_env, config_baseline, rank):
     #dataset = PointNavDatasetV1(config_env.DATASET)
     dataset = RearrangementDatasetV0(config_env.DATASET)
+    
     config_env.defrost()
     config_env.SIMULATOR.SCENE = dataset.episodes[0].scene_id
     print("Loading {}".format(config_env.SIMULATOR.SCENE))

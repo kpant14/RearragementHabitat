@@ -326,7 +326,6 @@ def main():
             # ------------------------------------------------------------------
             # Reinitialize variables when episode ends
             if step == args.max_episode_length - 1:  # Last episode step
-                obs, infos = envs.reset()
                 init_map_and_pose()
                 del last_obs
                 last_obs = obs.detach()
@@ -377,9 +376,9 @@ def main():
                 local_map[e, 2:, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
                 #TODO Currently only one object is considered. Add for all objects 
                 # Polar coordinate relative to the agent position 
-                dist_agent_obj = object_positions[e][1][0]
+                dist_agent_obj = object_positions[e][0][0]
                 # Adding agents angle with the relative angle to get the absolute angle. 
-                theta_agent_obj = object_positions[e][1][1] + np.radians(locs[e,2])
+                theta_agent_obj = object_positions[e][0][1] + np.radians(locs[e,2])
                 # Converting into cartesian format
                 z_coordinate = dist_agent_obj * np.cos(theta_agent_obj)
                 x_coordinate = dist_agent_obj * np.sin(theta_agent_obj)
@@ -572,15 +571,15 @@ def main():
             # Save periodic models
             if (total_num_steps * num_scenes) % args.save_periodic < \
                     num_scenes:
-                step = total_num_steps * num_scenes
+                step_ = total_num_steps * num_scenes
                 if args.train_slam:
                     torch.save(nslam_module.state_dict(),
                                os.path.join(dump_dir,
-                                            "periodic_{}.slam".format(step)))
+                                            "periodic_{}.slam".format(step_)))
                 if args.train_local:
                     torch.save(l_policy.state_dict(),
                                os.path.join(dump_dir,
-                                            "periodic_{}.local".format(step)))
+                                            "periodic_{}.local".format(step_)))
 
             # ------------------------------------------------------------------
 

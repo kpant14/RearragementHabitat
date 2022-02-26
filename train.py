@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 from os import path as osp
-
+import os
 from transformer import Models, Optim
 from dataLoader import PathDataLoader, PaddedSequence
 from torch.utils.tensorboard import SummaryWriter
@@ -33,7 +33,6 @@ def cal_performance(predVals, anchorPoints, trueLabels, lengths):
     n_correct = 0
     total_loss = 0
     for predVal, anchorPoint, trueLabel, length in zip(predVals, anchorPoints, trueLabels, lengths):
-        #print(anchorPoint)
         predVal = predVal.index_select(0, anchorPoint[:length])
         trueLabel = trueLabel[:length]
         loss = F.cross_entropy(predVal, trueLabel)
@@ -53,10 +52,11 @@ def train_epoch(model, trainingData, optimizer, device):
     for batch in tqdm(trainingData, mininterval=2):
         optimizer.zero_grad()
         encoder_input = batch['map'].float().to(device)
+        rgb_input = batch['rgb'].float().to(device)
         anchor = batch['anchor'].to(device)
         labels =  batch['labels'].to(device)
         lengths =  batch['length'].to(device)
-        predVal = model(encoder_input)
+        predVal = model(encoder_input, rgb_input)
         
         # Calculate the cross-entropy loss
         loss, n_correct = cal_performance(
@@ -83,7 +83,8 @@ def eval_epoch(model, validationData, device):
         for batch in tqdm(validationData, mininterval=2):
 
             encoder_input = batch['map'].float().to(device)
-            predVal = model(encoder_input)
+            rgb_input = batch['rgb'].float().to(device)
+            predVal = model(encoder_input, rgb_input)
 
             loss, n_correct = cal_performance(
                 predVal, 
@@ -111,10 +112,10 @@ if __name__ == "__main__":
     parser.add_argument('--batchSize', help="Batch size per GPU", type=int, default = 120)
     parser.add_argument('--train', help="Requires training", type=int, default = 1)
     parser.add_argument('--modelFolder', help="path to pretrained model", default = None)
-    parser.add_argument('--fileDir', help="Directory to save training Data",default = 'pretrained_models/')
+    parser.add_argument('--exp_name', help="Directory to save training Data",default = 'exp1')
     args = parser.parse_args()
 
-    dataFolder = 'tmp/data/exp1/'
+    dataFolder = 'tmp/data/'
     print(f"Using data from {dataFolder}")
     batch_size = args.batchSize
     device = 'cpu'
@@ -152,7 +153,7 @@ if __name__ == "__main__":
             d_v=256, 
             d_model=512, 
             d_inner=1024, 
-            dropout=0.1,
+            dropout=0.3,
         )
         transformer = Models.Transformer(**model_args)
         
@@ -172,27 +173,28 @@ if __name__ == "__main__":
     )
             
     trainDataset = PathDataLoader(
-        env_list=list(range(1,2)),
-        dataFolder=osp.join(dataFolder, '')
+        env_list=list(range(1,36)),
+        dataFolder=osp.join(dataFolder, 'train_reset')
     )
     trainingData = DataLoader(trainDataset, shuffle=True, num_workers=15, collate_fn=PaddedSequence, batch_size=batch_size)
 
     # Validation Data
     valDataset = PathDataLoader(
-        env_list=list(range(2,4)),
-        dataFolder=osp.join(dataFolder, '')
+        env_list=list(range(1,11)),
+        dataFolder=osp.join(dataFolder, 'val_reset')
     )
     validationData = DataLoader(valDataset, shuffle=True, num_workers=12, collate_fn=PaddedSequence, batch_size=batch_size)
     
     # Increase number of epochs.
-    n_epochs = 100
+    n_epochs = 1000
     results = {}
     train_loss = []
     val_loss = []
     train_n_correct_list = []
     val_n_correct_list = []
-    trainDataFolder  = args.fileDir
-    
+    trainDataFolder  = osp.join('transformer_models/', args.exp_name)
+    if not os.path.exists(trainDataFolder):
+        os.makedirs(trainDataFolder)
     
     
     # Save the model parameters as .json file

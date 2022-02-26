@@ -31,7 +31,7 @@ from env.habitat.utils.noisy_actions import CustomActionSpaceConfiguration
 from  env.habitat.utils import pose as pu
 from  env.habitat.utils import visualizations as vu
 from env.habitat.utils.supervision import HabitatMaps
-from mapUtils import get_path, create_prm_planner,get_random_valid_pos, get_validity_checker
+from mapUtils import get_path, create_prm_planner,get_random_valid_pos, get_validity_checker,check_validity
 from ompl import base as ob
 from ompl import geometric as og
 from model import get_grid
@@ -132,14 +132,14 @@ class Exploration_Env(habitat.RLEnv):
 
     def reset(self):
         args = self.args
-        self.episode_no += 1
+       
         self.timestep = 0
         self._previous_action = None
         self.trajectory_states = []
 
-        if args.randomize_env_every > 0:
-            if np.mod(self.episode_no, args.randomize_env_every) == 0:
-                self.randomize_env()
+        # if args.randomize_env_every > 0:
+        #     if np.mod(self.episode_no, args.randomize_env_every) == 0:
+        #         self.randomize_env()
         
         self.prm_planner = None
         self.prm_planner_setup = None
@@ -150,7 +150,7 @@ class Exploration_Env(habitat.RLEnv):
             full_map_size = args.map_size_cm//args.map_resolution
             self.explorable_map = self._get_gt_map(full_map_size)
         self.prev_explored_area = 0.
-
+        self.episode_no += 1
         # For prm path dataset generation  
         self.goal_reached =0
         self.prm_star_path = {}
@@ -481,6 +481,10 @@ class Exploration_Env(habitat.RLEnv):
                 if len(self.prm_star_path) == 0:
                     self.start_state[1] = np.float64((grid.shape[0] - start[0])* args.map_resolution / 100 )
                     self.start_state[0] = np.float64(start[1]* args.map_resolution / 100 )
+                    # To compensate when the agent spawn at a location not valid on GT map 
+                    while not check_validity(planning_map, self.start_state):
+                        self.start_state[1]+=1
+                        self.start_state[0]+=1
                 else:
                     #Take the previous goal position as the new start position 
                     self.start_state = self.goal_state     

@@ -13,7 +13,8 @@ from os import path as osp
 from einops import rearrange
 
 from torch.nn.utils.rnn import pad_sequence
-
+from torchvision import transforms
+from PIL import Image
 from utils.utils import geom2pix
 
 def PaddedSequence(batch):
@@ -141,9 +142,13 @@ class PathDataLoader(Dataset):
         anchor = torch.cat((torch.tensor(AnchorPointsPos), torch.tensor(AnchorPointsNeg)))
         labels = torch.zeros_like(anchor)
         labels[:len(AnchorPointsPos)] = 1
+        preprocess = transforms.Compose([transforms.Resize(256),transforms.CenterCrop(224),transforms.ToTensor(),
+                        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
+        rgb = Image.fromarray(data['curr_rgb'])
+        rgb = preprocess(rgb)
         return {
             'map':torch.as_tensor(mapEncoder),
-            'rgb': torch.as_tensor(data['curr_rgb']),
+            'rgb': torch.as_tensor(rgb),
             'depth': torch.as_tensor(data['curr_depth']), 
             'anchor':anchor, 
             'labels':labels
