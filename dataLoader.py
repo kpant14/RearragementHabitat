@@ -146,10 +146,12 @@ class PathDataLoader(Dataset):
                         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
         rgb = Image.fromarray(data['curr_rgb'])
         rgb = preprocess(rgb)
+        depth = Image.fromarray(data['curr_depth'])
+        depth = preprocess(depth)
         return {
             'map':torch.as_tensor(mapEncoder),
             'rgb': torch.as_tensor(rgb),
-            'depth': torch.as_tensor(data['curr_depth']), 
+            'depth': torch.as_tensor(depth), 
             'anchor':anchor, 
             'labels':labels
         }

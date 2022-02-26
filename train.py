@@ -53,10 +53,11 @@ def train_epoch(model, trainingData, optimizer, device):
         optimizer.zero_grad()
         encoder_input = batch['map'].float().to(device)
         rgb_input = batch['rgb'].float().to(device)
+        depth_input = batch['depth'].float().to(device)
         anchor = batch['anchor'].to(device)
         labels =  batch['labels'].to(device)
         lengths =  batch['length'].to(device)
-        predVal = model(encoder_input, rgb_input)
+        predVal = model(encoder_input, rgb_input,depth_input)
         
         # Calculate the cross-entropy loss
         loss, n_correct = cal_performance(
@@ -84,7 +85,8 @@ def eval_epoch(model, validationData, device):
 
             encoder_input = batch['map'].float().to(device)
             rgb_input = batch['rgb'].float().to(device)
-            predVal = model(encoder_input, rgb_input)
+            depth_input = batch['depth'].float().to(device)
+            predVal = model(encoder_input, rgb_input,depth_input)
 
             loss, n_correct = cal_performance(
                 predVal, 
@@ -173,15 +175,15 @@ if __name__ == "__main__":
     )
             
     trainDataset = PathDataLoader(
-        env_list=list(range(1,36)),
-        dataFolder=osp.join(dataFolder, 'train_reset')
+        env_list=list(range(1,5)),
+        dataFolder=osp.join(dataFolder, 'exp1')
     )
     trainingData = DataLoader(trainDataset, shuffle=True, num_workers=15, collate_fn=PaddedSequence, batch_size=batch_size)
 
     # Validation Data
     valDataset = PathDataLoader(
-        env_list=list(range(1,11)),
-        dataFolder=osp.join(dataFolder, 'val_reset')
+        env_list=list(range(1,5)),
+        dataFolder=osp.join(dataFolder, 'exp1')
     )
     validationData = DataLoader(valDataset, shuffle=True, num_workers=12, collate_fn=PaddedSequence, batch_size=batch_size)
     

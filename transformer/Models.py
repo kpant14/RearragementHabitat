@@ -14,7 +14,7 @@ from einops import rearrange, repeat
 import math
 from typing import Tuple
 import torch
-from torch import nn, Tensor
+from torch import nn, Tensor, prelu, relu
 from torchsummary import summary
 
 class PositionalEncoding(nn.Module):
@@ -124,6 +124,21 @@ class Transformer(nn.Module):
             d_inner=d_inner, 
             dropout=dropout, 
         )
+        self.depth_model = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=8, stride=3),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=7, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=6, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 32, kernel_size=5, stride=2),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(1152,512),
+            nn.ReLU(),
+
+        )
+
         resnet18 = models.resnet18(pretrained=True)
         #Taking features from the second last layer of the Resnet18 Network
         self.rgb_model = torch.nn.Sequential(*(list(resnet18.children())[:-1]))
@@ -134,7 +149,7 @@ class Transformer(nn.Module):
             Rearrange('bc d 1 1 -> bc d')
         )
 
-    def forward(self, input_map, rgb):
+    def forward(self, input_map, rgb, depth):
         '''
         The callback function.
         :param input_map:
@@ -145,7 +160,9 @@ class Transformer(nn.Module):
         enc_output = self.encoder_map(input_map)
         rgb_output  = self.rgb_model(rgb)
         rgb_output = rearrange(rgb_output,'b c 1 1 -> b 1 c')
-        combined_output = torch.cat((enc_output,rgb_output), dim = 1)
+        depth_output = self.depth_model(depth)
+        depth_output = rearrange(depth_output,'b c-> b 1 c')
+        combined_output = torch.cat((enc_output,rgb_output,depth_output), dim = 1)
         seq_logit = self.class_pred(combined_output)
         #seq_logit = self.classPred(enc_output)
         batch_size = input_map.shape[0]
