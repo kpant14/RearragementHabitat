@@ -1,6 +1,7 @@
 ''' A dataloader for training Mask+Transformers
 '''
 
+import gzip
 import torch
 from torch.utils.data import Dataset
 
@@ -116,13 +117,13 @@ class PathDataLoader(Dataset):
         returns dict: A dictonary of the encoded map and target points.
         '''
         env, idx_sample = self.indexDict[idx]
-        with open(osp.join(self.dataFolder, f'env{env}', f'data{idx_sample:06d}.p'), 'rb') as f:
+        with gzip.open(osp.join(self.dataFolder, f'env{env}', f'data{idx_sample:06d}.p'), 'rb') as f:
             data = pickle.load(f)
 
         explored_map = data['explored_map']
         collison_map = data['collision_map']
         map_size = collison_map.shape
-        path = [data['next_waypoint']] #data['path_to_go']
+        path = [data['next_waypoint']] 
         goal_index = geom2pix(data['path_to_go'][-1, :], size = (240,240))
         start_index = (data['curr_loc'][1], data['curr_loc'][0]) 
         
@@ -142,12 +143,14 @@ class PathDataLoader(Dataset):
         anchor = torch.cat((torch.tensor(AnchorPointsPos), torch.tensor(AnchorPointsNeg)))
         labels = torch.zeros_like(anchor)
         labels[:len(AnchorPointsPos)] = 1
-        preprocess = transforms.Compose([transforms.Resize(256),transforms.CenterCrop(224),transforms.ToTensor(),
+        preprocess_rgb = transforms.Compose([transforms.Resize(256),transforms.CenterCrop(224),transforms.ToTensor(),
                         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
+        preprocess_depth = transforms.Compose([transforms.Resize(256),transforms.CenterCrop(224),transforms.ToTensor(),])                
         rgb = Image.fromarray(data['curr_rgb'])
-        rgb = preprocess(rgb)
-        depth = Image.fromarray(data['curr_depth'])
-        depth = preprocess(depth)
+        rgb = preprocess_rgb(rgb)
+        depth = np.squeeze(data['curr_depth'], axis=2)
+        depth = Image.fromarray((depth* 255).astype(np.uint8))
+        depth = preprocess_depth(depth)
         return {
             'map':torch.as_tensor(mapEncoder),
             'rgb': torch.as_tensor(rgb),

@@ -123,7 +123,7 @@ if __name__ == "__main__":
     device = 'cpu'
     if torch.cuda.is_available():
         print("Using GPU....")
-        device = torch.device('cuda')
+        device = torch.device("cuda:1")
 
     if torch.cuda.device_count() > 1:
         batch_size = batch_size * torch.cuda.device_count()
@@ -155,14 +155,14 @@ if __name__ == "__main__":
             d_v=256, 
             d_model=512, 
             d_inner=1024, 
-            dropout=0.3,
+            dropout=0.5,
         )
         transformer = Models.Transformer(**model_args)
         
 
     if torch.cuda.device_count() > 1:
         print("Using ", torch.cuda.device_count(), "GPUs")
-        transformer = nn.DataParallel(transformer)
+        transformer = nn.DataParallel(transformer,device_ids = [1, 2])
     transformer.to(device=device)
 
     # Define the optimizer
@@ -175,15 +175,15 @@ if __name__ == "__main__":
     )
             
     trainDataset = PathDataLoader(
-        env_list=list(range(1,5)),
-        dataFolder=osp.join(dataFolder, 'exp1')
+        env_list=list(range(1,35)),
+        dataFolder=osp.join(dataFolder, 'train_full')
     )
     trainingData = DataLoader(trainDataset, shuffle=True, num_workers=15, collate_fn=PaddedSequence, batch_size=batch_size)
 
     # Validation Data
     valDataset = PathDataLoader(
-        env_list=list(range(1,5)),
-        dataFolder=osp.join(dataFolder, 'exp1')
+        env_list=list(range(1,10)),
+        dataFolder=osp.join(dataFolder, 'train_full')
     )
     validationData = DataLoader(valDataset, shuffle=True, num_workers=12, collate_fn=PaddedSequence, batch_size=batch_size)
     

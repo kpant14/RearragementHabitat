@@ -9,7 +9,7 @@ def get_args():
     ## General Arguments
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
-    parser.add_argument('--auto_gpu_config', type=int, default=0)
+    parser.add_argument('--auto_gpu_config', type=int, default=1)
     parser.add_argument('--total_num_scenes', type=str, default="auto")
     parser.add_argument('-n', '--num_processes', type=int, default=1,
                         help="""how many training processes to use (default:4)
@@ -17,7 +17,7 @@ def get_args():
                                 and training on gpus """)
     parser.add_argument('--num_processes_per_gpu', type=int, default=11)
     parser.add_argument('--num_processes_on_first_gpu', type=int, default=0)
-    parser.add_argument('--num_episodes', type=int, default=1000000,
+    parser.add_argument('--num_episodes', type=int, default=100,
                         help='number of training episodes (default: 1000000)')
     parser.add_argument('--no_cuda', action='store_true', default=False,
                         help='disables CUDA training')

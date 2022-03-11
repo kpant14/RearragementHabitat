@@ -1,3 +1,4 @@
+import gzip
 import math
 import os
 import pickle
@@ -31,7 +32,7 @@ from env.habitat.utils.noisy_actions import CustomActionSpaceConfiguration
 from  env.habitat.utils import pose as pu
 from  env.habitat.utils import visualizations as vu
 from env.habitat.utils.supervision import HabitatMaps
-from mapUtils import get_path, create_prm_planner,get_random_valid_pos, get_validity_checker,check_validity
+from mapUtils import get_path, create_prm_planner,get_random_valid_pos, get_validity_checker,check_validity,get_nearest_valid
 from ompl import base as ob
 from ompl import geometric as og
 from model import get_grid
@@ -167,10 +168,9 @@ class Exploration_Env(habitat.RLEnv):
             rgb = np.asarray(self.res(rgb))
         state = rgb.transpose(2, 0, 1)
         depth = _preprocess_depth(obs['depth'])
-        
         # To store as the dataset for Region proposal network
         self.curr_rgb = rgb
-        self.curr_depth = depth
+        self.curr_depth = obs['depth']
         self.last_rgb = self.curr_rgb
         self.last_depth = self.curr_depth
         
@@ -267,7 +267,7 @@ class Exploration_Env(habitat.RLEnv):
                                (dx_gt, dy_gt, do_gt))
 
         self.curr_rgb = rgb
-        self.curr_depth = depth   
+        self.curr_depth = obs['depth']   
 
         if not args.noisy_odometry:
             self.curr_loc = self.curr_loc_gt
@@ -474,25 +474,24 @@ class Exploration_Env(habitat.RLEnv):
             if (self.prm_planner == None):
                 _,validity_checker = get_validity_checker(planning_map)
                 self.prm_planner_setup,self.prm_planner = create_prm_planner(validity_checker)
-                
-            
-
             if (len(self.prm_star_path) == 0 or self.goal_reached == 1):
                 if len(self.prm_star_path) == 0:
                     self.start_state[1] = np.float64((grid.shape[0] - start[0])* args.map_resolution / 100 )
                     self.start_state[0] = np.float64(start[1]* args.map_resolution / 100 )
-                    # To compensate when the agent spawn at a location not valid on GT map 
-                    while not check_validity(planning_map, self.start_state):
-                        self.start_state[1]+=1
-                        self.start_state[0]+=1
                 else:
                     #Take the previous goal position as the new start position 
                     self.start_state = self.goal_state     
+                # To compensate when the agent spawn at a location not valid on GT map  
+                if not check_validity(planning_map , self.start_state):
+                     state = get_nearest_valid(planning_map,self.start_state)
+                     self.start_state[0] = state[0]
+                     self.start_state[1] = state[1]
+
                 prm_star_path = {}
                 success = False
                 while success == False:
                     self.goal_state,_ = get_random_valid_pos(planning_map, robot_radius = 0.3) 
-                    path, path_interpolated, success = get_path(self.start_state, self.goal_state, self.prm_planner_setup, self.prm_planner,self.rank+1,plan_time=10)
+                    path, path_interpolated, success = get_path(self.start_state, self.goal_state, self.prm_planner_setup, self.prm_planner,self.rank+1,plan_time=2)
                     prm_star_path['path'] = path
                     prm_star_path['path_interpolated'] = path_interpolated
                     prm_star_path['success'] = success
@@ -589,9 +588,9 @@ class Exploration_Env(habitat.RLEnv):
             curr_loc = [start[0], start[1], self.curr_loc[2]]
 
             data={}
-            data['last_loc'] = last_loc
-            data['last_rgb'] = self.last_rgb
-            data['last_depth'] = self.last_depth
+            # data['last_loc'] = last_loc
+            # data['last_rgb'] = self.last_rgb
+            # data['last_depth'] = self.last_depth
             data['prm_star_path'] = self.prm_star_path
             data['curr_loc'] = curr_loc
             data['curr_rgb'] = self.curr_rgb
@@ -604,7 +603,9 @@ class Exploration_Env(habitat.RLEnv):
             data['gt_map'] = self.explorable_map[gx1:gx2, gy1:gy2]
             if not os.path.exists(ep_dir):
                 os.makedirs(ep_dir)
-            pickle.dump(data, open(os.path.join(ep_dir,f'data{(self.episode_no-1) * args.max_episode_length + self.timestep:06d}.p'), 'wb'))
+            with gzip.open(os.path.join(ep_dir,f'data{(self.episode_no-1) * args.max_episode_length + self.timestep:06d}.p'), "wb") as f:
+                pickle.dump(data, f)    
+                #pickle.dump(data, open(os.path.join(ep_dir,f'data{(self.episode_no-1) * args.max_episode_length + self.timestep:06d}.p'), 'wb'))
 
             if (pu.get_l2_distance(start[0], goal[0], start[1], goal[1])*5./100. < 0.2):
                     self.goal_reached = 1 
@@ -692,7 +693,6 @@ class Exploration_Env(habitat.RLEnv):
                             dump_dir, self.rank, self.episode_no,
                             self.timestep, args.visualize,
                             args.print_images, args.vis_type)
-
         return output
 
     def _get_gt_map(self, full_map_size):

@@ -1,3 +1,5 @@
+import copy
+from random import random
 from cv2 import cuda_Event
 from env import habitat
 from env.habitat.utils.supervision import HabitatMaps 
@@ -126,6 +128,23 @@ def check_validity(CurMap, state):
     ValidityCheckerObj = ValidityChecker(si, CurMap=CurMap)
     si.setStateValidityChecker(ValidityCheckerObj)
     return ValidityCheckerObj.isValid(state)
+
+def get_nearest_valid(CurMap, state, N=10000):
+    min_index = min(state[0] - 2 , state[1] - 2)
+    min_ =   min_index if min_index > 0 else 0
+    max_index = max(state[0] + 2 , state[1] + 2)
+    max_ =   max_index if max_index < 12  else 12
+    print(min_, max_)
+    random_state = np.float64(np.random.uniform(min_,max_,(N,2)))
+    min_dist = 10000
+    min_state = [state[0], state[1]]
+    curr_state = [state[0], state[1]]
+    for i in range(N):
+        if(check_validity(CurMap, random_state[i])):
+            if(np.linalg.norm(curr_state - random_state[i]) < min_dist):
+                min_dist = np.linalg.norm(curr_state - random_state[i])
+                min_state = random_state[i]    
+    return min_state            
 
 def get_validity_checker(CurMap, robot_radius=0.1):
     mapSize = CurMap.shape

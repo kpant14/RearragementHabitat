@@ -41,7 +41,7 @@ def cls_decoder(key, value):
     return int(value)
 
 
-def geom2pix(pos, res=0.05, size=(480, 480)):
+def geom2pix(pos, res=0.05, size=(240, 240)):
     """
     Convert geometrical position to pixel co-ordinates. The origin 
     is assumed to be at [image_size[0]-1, 0].
@@ -61,7 +61,7 @@ def geom2pix(pos, res=0.05, size=(480, 480)):
     v                         |  
     ---------------------------  
     """
-    return (np.int(np.floor(pos[0]/res)), np.int(size[0]-1-np.floor(pos[1]/res)))
+    return (np.int(np.floor(pos[0]/res) -1), np.int(size[0]-1-np.floor(pos[1]/res)))
 
 
 class ValidityChecker(ob.StateValidityChecker):
