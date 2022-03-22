@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
+from distutils.log import info
 import os
 import random
 import time
@@ -310,7 +311,7 @@ class PPOTrainer(BaseRLTrainer):
         )
         self.rollouts.to(self.device)
 
-        observations = self.envs.reset()
+        observations,info = self.envs.reset()
         batch = batch_obs(
             observations, device=self.device, cache=self._obs_batching_cache
         )

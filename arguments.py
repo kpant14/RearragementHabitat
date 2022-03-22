@@ -9,7 +9,7 @@ def get_args():
     ## General Arguments
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
-    parser.add_argument('--auto_gpu_config', type=int, default=1)
+    parser.add_argument('--auto_gpu_config', type=int, default=0)
     parser.add_argument('--total_num_scenes', type=str, default="auto")
     parser.add_argument('-n', '--num_processes', type=int, default=1,
                         help="""how many training processes to use (default:4)
@@ -57,6 +57,9 @@ def get_args():
     parser.add_argument('--load_local', type=str, default="0",
                         help="""model path to load,
                                 0 to not reload (default: 0)""")
+    parser.add_argument('--load_transformer', type=str, default="0",
+                        help="""model path to load,
+                                0 to not reload (default: 0)""")                            
     parser.add_argument('-v', '--visualize', type=int, default=0,
                         help='1:Render the frame (default: 0)')
     parser.add_argument('--vis_type', type=int, default=1,

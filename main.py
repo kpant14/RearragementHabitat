@@ -1,9 +1,12 @@
+import json
 import time
 from collections import deque
 
 import os
 from ompl import base as ob
 from ompl import geometric as og
+
+
 os.environ["OMP_NUM_THREADS"] = "1"
 import numpy as np
 import torch
@@ -18,6 +21,8 @@ from utils.storage import GlobalRolloutStorage, FIFOMemory
 from utils.optimization import get_optimizer
 from model import RL_Policy, Local_IL_Policy, Neural_SLAM_Module
 from mapUtils import get_path, create_prm_planner,get_random_valid_pos, get_validity_checker
+from transformer import Models
+from utils.utils import get_patch
 import algo
 
 import sys
@@ -129,7 +134,10 @@ def main():
     # Initializing full and local map
     full_map = torch.zeros(num_scenes, 4, full_w, full_h).float().to(device)
     local_map = torch.zeros(num_scenes, 4, local_w, local_h).float().to(device)
-
+    patch_map = np.zeros((num_scenes, local_w, local_h))
+    pred_map = np.zeros((num_scenes, int(local_w/20), int(local_h/20)))
+    rgb = np.zeros((num_scenes, 256, 256, 3))
+    depth = np.zeros((num_scenes, 256, 256, 1))
     # Initial full and local pose
     full_pose = torch.zeros(num_scenes, 3).float().to(device)
     local_pose = torch.zeros(num_scenes, 3).float().to(device)
@@ -207,6 +215,17 @@ def main():
 
     slam_memory = FIFOMemory(args.slam_memory_size)
 
+
+    model_args = dict(
+            n_layers=6, 
+            n_heads=3, 
+            d_k=512, 
+            d_v=256, 
+            d_model=512, 
+            d_inner=1024, 
+            dropout=0.5,
+        )
+    transformer = Models.Transformer(**model_args).to(device)
     # Loading model
     if args.load_slam != "0":
         print("Loading slam {}".format(args.load_slam))
@@ -222,6 +241,13 @@ def main():
         state_dict = torch.load(args.load_local,
                                 map_location=lambda storage, loc: storage)
         l_policy.load_state_dict(state_dict)
+        
+        print("Loading transformer {}".format(args.load_transformer))
+        checkpoint = torch.load(args.load_transformer,
+                                map_location=lambda storage, loc: storage)
+        transformer.load_state_dict(checkpoint['state_dict'])
+
+        _ = transformer.eval()    
 
     if not args.train_local:
         l_policy.eval()
@@ -269,7 +295,15 @@ def main():
         p_input['exp_pred'] = global_input[e, 1, :, :].detach().cpu().numpy()
         p_input['pose_pred'] = planner_pose_inputs[e]
         p_input['goal'] = object_positions[e][0].astype(int) # only the first object
-       
+        r, c = locs[e, 1], locs[e, 0]
+        loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                        int(c * 100.0 / args.map_resolution)]
+        rgb[e] =  infos[e]['rgb']
+        depth[e] = infos[e]['depth']
+    
+        patch_map[e], pred_map[e] = get_patch(transformer, [loc_r,loc_c], object_positions[e][0].astype(int), local_map[e, 1, :, :].cpu().numpy(), local_map[e, 0, :, :].cpu().numpy(),rgb[e],depth[e])
+        p_input['patch_map'] = patch_map[e]
+        p_input['pred_map'] = pred_map[e]
 
     # Output stores local goals as well as the the ground-truth action
     output = envs.get_short_term_goal(planner_inputs)
@@ -385,58 +419,68 @@ def main():
                 object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution + loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
                 
                 # # For every global step, update the full and local maps
-            # if l_step == args.num_local_steps - 1:    
-            #     for e in range(num_scenes):
-            #         full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
-            #             local_map[e]
-            #         full_pose[e] = local_pose[e] + \
-            #                         torch.from_numpy(origins[e]).to(device).float()
+            if l_step == args.num_local_steps - 1:    
+                for e in range(num_scenes):
+                    full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
+                        local_map[e]
+                    full_pose[e] = local_pose[e] + \
+                                    torch.from_numpy(origins[e]).to(device).float()
 
-            #         locs = full_pose[e].cpu().numpy()
-            #         r, c = locs[1], locs[0]
-            #         loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-            #                         int(c * 100.0 / args.map_resolution)]
+                    locs = full_pose[e].cpu().numpy()
+                    r, c = locs[1], locs[0]
+                    loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                                    int(c * 100.0 / args.map_resolution)]
 
-            #         lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-            #                                             (local_w, local_h),
-            #                                             (full_w, full_h))
+                    lmb[e] = get_local_map_boundaries((loc_r, loc_c),
+                                                        (local_w, local_h),
+                                                        (full_w, full_h))
 
-            #         planner_pose_inputs[e, 3:] = lmb[e]
-            #         origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
-            #                         lmb[e][0] * args.map_resolution / 100.0, 0.]
+                    planner_pose_inputs[e, 3:] = lmb[e]
+                    origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
+                                    lmb[e][0] * args.map_resolution / 100.0, 0.]
 
-            #         local_map[e] = full_map[e, :,
-            #                         lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
-            #         local_pose[e] = full_pose[e] - \
-            #                         torch.from_numpy(origins[e]).to(device).float()
-            #     locs = local_pose.cpu().numpy()
-            #     for e in range(num_scenes):
-            #         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-            #         r, c = locs[e, 1], locs[e, 0]
-            #         loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-            #                     int(c * 100.0 / args.map_resolution)]
+                    local_map[e] = full_map[e, :,
+                                    lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
+                    local_pose[e] = full_pose[e] - \
+                                    torch.from_numpy(origins[e]).to(device).float()
+                locs = local_pose.cpu().numpy()
+                for e in range(num_scenes):
+                    global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
+                    r, c = locs[e, 1], locs[e, 0]
+                    loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                                int(c * 100.0 / args.map_resolution)]
 
-            #         #TODO Currently only one object is considered. Add for all objects 
-            #         # Polar coordinate relative to the agent position 
-            #         dist_agent_obj = object_positions[e][1][0]
-            #         # Adding agents angle with the relative angle to get the absolute angle. 
-            #         theta_agent_obj = object_positions[e][1][1] + np.radians(locs[e,2])
-            #         # Converting into cartesian format
-            #         z_coordinate = dist_agent_obj * np.cos(theta_agent_obj)
-            #         x_coordinate = dist_agent_obj * np.sin(theta_agent_obj)
-            #         object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution + loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
+                    #TODO Currently only one object is considered. Add for all objects 
+                    # Polar coordinate relative to the agent position 
+                    dist_agent_obj = object_positions[e][1][0]
+                    # Adding agents angle with the relative angle to get the absolute angle. 
+                    theta_agent_obj = object_positions[e][1][1] + np.radians(locs[e,2])
+                    # Converting into cartesian format
+                    z_coordinate = dist_agent_obj * np.cos(theta_agent_obj)
+                    x_coordinate = dist_agent_obj * np.sin(theta_agent_obj)
+                    object_positions[e][0] = [x_coordinate * 100.0 / args.map_resolution + loc_r, z_coordinate * 100.0 / args.map_resolution + loc_c ]
             # ------------------------------------------------------------------
             # Get short term goal
-
+            
+                
             planner_inputs = [{} for e in range(num_scenes)]
             for e, p_input in enumerate(planner_inputs):
                 p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
                 p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
                 p_input['pose_pred'] = planner_pose_inputs[e]
                 p_input['goal'] = object_positions[e][0].astype(int) # only the first object
+                r, c = locs[e, 1], locs[e, 0]
+                loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                                int(c * 100.0 / args.map_resolution)]
+                rgb[e] =  infos[e]['rgb']
+                depth[e] = infos[e]['depth']
+                [goal_x, goal_y] = object_positions[e][0].astype(int)
+
+                patch_map[e], pred_map[e] = get_patch(transformer, [loc_c,loc_r], [goal_x,goal_y], local_map[e, 1, :, :].cpu().numpy(), local_map[e, 0, :, :].cpu().numpy(),rgb[e],depth[e])
+                p_input['patch_map'] = patch_map[e]
+                p_input['pred_map'] = pred_map[e]
             
             output = envs.get_short_term_goal(planner_inputs)
-            
             # ------------------------------------------------------------------
 
             ### TRAINING

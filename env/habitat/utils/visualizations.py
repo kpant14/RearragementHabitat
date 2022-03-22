@@ -16,7 +16,7 @@ import skimage
 from habitat_sim.utils import viz_utils as vut
 import cv2
 
-def visualize(fig, ax, img, grid, pos, gt_pos, dump_dir, rank, ep_no, t,
+def visualize(fig, ax, img, grid, patch_map, pred_map, pos, gt_pos, dump_dir, rank, ep_no, t,
               visualize, print_images, vis_style):
     for i in range(2):
         ax[i].clear()
@@ -66,6 +66,7 @@ def visualize(fig, ax, img, grid, pos, gt_pos, dump_dir, rank, ep_no, t,
                 head_width=agent_size, head_length=agent_size * 1.25,
                 length_includes_head=True, fc=fc, ec=fc, alpha=0.6)
 
+    ax[1].imshow(np.flipud(patch_map), cmap='gray', alpha=0.5)
     for _ in range(5):
         plt.tight_layout()
 

@@ -90,10 +90,10 @@ class Exploration_Env(habitat.RLEnv):
 
         self.action_space = gym.spaces.Discrete(self.num_actions)
 
-        self.observation_space = gym.spaces.Box(0, 255,
-                                                (3, args.frame_height,
-                                                    args.frame_width),
-                                                dtype='uint8')
+        # self.observation_space = gym.spaces.Box(0, 255,
+        #                                         (3, args.frame_height,
+        #                                             args.frame_width),
+        #                                         dtype='uint8')
 
         self.mapper = self.build_mapper()
 
@@ -211,12 +211,15 @@ class Exploration_Env(habitat.RLEnv):
             'geodesic_distance':[0],
             'object_goal': obs['object_goal'],
             'object_position': obs['object_position'],
-            'gt_map': self.explorable_map
+            'gt_map': self.explorable_map,
+            'depth' : obs['depth'],
+            'rgb' : obs['rgb']      
         }
 
         self.save_position()
 
         return state, self.info
+        #return obs, self.info
 
     def step(self, action):
 
@@ -322,7 +325,9 @@ class Exploration_Env(habitat.RLEnv):
                                  do_gt - do_base]
         
         self.info['object_goal'] = obs['object_goal']
-        self.info['object_position'] = obs['object_position']                         
+        self.info['object_position'] = obs['object_position']     
+        self.info['depth'] = obs['depth']   
+        self.info['rgb'] = obs['rgb']                   
         if self.timestep%args.num_local_steps==0:
             area, ratio = self.get_global_reward()
             self.info['exp_reward'] = area
@@ -341,6 +346,7 @@ class Exploration_Env(habitat.RLEnv):
             done = False
 
         return state, rew, done, self.info
+        #return obs, rew, done, self.info
 
     def get_reward_range(self):
         # This function is not used, Habitat-RLEnv requires this function
@@ -528,10 +534,14 @@ class Exploration_Env(habitat.RLEnv):
             y = int(last_start[1] + (start_gt[1] - last_start[1]) * (i+1) / steps)
             self.visited_gt[x, y] = 1
 
-
+        #print(inputs['pred_map'])
+        
         # Get goal
-        goal = inputs['goal']
-        goal = pu.threshold_poses(goal, grid.shape)
+        #goal = inputs['goal']
+        
+        goal  = np.argwhere(inputs['pred_map'].max() == inputs['pred_map'])[0]*100.0 / args.map_resolution
+        print(np.argwhere(inputs['pred_map'].max() == inputs['pred_map']), goal)
+        goal = pu.threshold_poses(goal.astype(int), grid.shape)
         
         # Changing the goal location to the random valid goal state
         if args.data_gen:
@@ -666,7 +676,7 @@ class Exploration_Env(habitat.RLEnv):
                                 self.map[gx1:gx2, gy1:gy2] *
                                     self.explored_map[gx1:gx2, gy1:gy2])
                 vis_grid = np.flipud(vis_grid)
-                vu.visualize(self.figure, self.ax, self.obs, vis_grid[:,:,::-1],
+                vu.visualize(self.figure, self.ax, self.obs, vis_grid[:,:,::-1], inputs['patch_map'], inputs['pred_map'],
                             (start_x - gy1*args.map_resolution/100.0,
                              start_y - gx1*args.map_resolution/100.0,
                              start_o),

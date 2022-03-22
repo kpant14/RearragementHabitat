@@ -17,12 +17,12 @@ class RearrangementRLEnv(Exploration_Env):
         }
         super().__init__(args, rank,config_env, config_baseline, dataset)
         self.num_actions = 3
-        self.action_space = gym.spaces.Discrete(self.num_actions)
+        # self.action_space = gym.spaces.Discrete(self.num_actions)
 
-        self.observation_space = gym.spaces.Box(0, 255,
-                                                (3, args.frame_height,
-                                                    args.frame_width),
-                                                dtype='uint8')
+        # self.observation_space = gym.spaces.Box(0, 255,
+        #                                         (3, args.frame_height,
+        #                                             args.frame_width),
+        #                                         dtype='uint8')
         #self._rl_config = config_env.RL
         #self._core_env_config = config_env.TASK_CONFIG
         self._previous_action = None
