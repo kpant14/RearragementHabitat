@@ -12,6 +12,7 @@
 # @markdown - `AgentToObjectDistance` which measure the euclidean distance between the agent and the object.
 # @markdown - `ObjectToGoalDistance` which measures the euclidean distance between the object and the goal.
 
+from distutils.command.config import config
 from gym import spaces
 
 import habitat_sim
@@ -40,8 +41,8 @@ class GrippedObjectSensor(Sensor):
         return self.cls_uuid
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
-
-        return spaces.Discrete(len(self._sim.get_existing_object_ids()))
+        #return spaces.Discrete(len(self._sim.get_existing_object_ids()))
+        return spaces.Discrete(1)
 
     def _get_sensor_type(self, *args: Any, **kwargs: Any):
         return SensorTypes.MEASUREMENT
@@ -274,6 +275,6 @@ class RearrangementTask(NavigationTask):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-
+   
     def overwrite_sim_config(self, sim_config, episode):
         return merge_sim_episode_with_object_config(sim_config, episode)

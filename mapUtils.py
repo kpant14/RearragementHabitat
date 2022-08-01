@@ -11,7 +11,7 @@ try:
 except ImportError:
     print("Could not find OMPL")
     raise ImportError("Run inside docker!!")
-from utils.utils import geom2pix, ValidityChecker
+from utils.mpt_utils import geom2pix, ValidityChecker
 import os
 import torch
 

@@ -4,19 +4,15 @@
 import gzip
 import torch
 from torch.utils.data import Dataset
-
-import skimage.io
 import pickle
 import numpy as np
-
 import os
 from os import path as osp
-from einops import rearrange
 
 from torch.nn.utils.rnn import pad_sequence
 from torchvision import transforms
 from PIL import Image
-from utils.utils import geom2pix, geom2pix_mat_pos, get_hash_table, get_encoder_input
+from utils.mpt_utils import geom2pix, geom2pix_mat_neg, geom2pix_mat_pos, get_encoder_input, get_grid_points
 
 def PaddedSequence(batch):
     '''
@@ -54,7 +50,8 @@ class PathDataLoader(Dataset):
         self.env_list = env_list
         self.indexDict = [(envNum, int(i)) 
             for envNum in env_list 
-                for i in range(len(os.listdir(osp.join(dataFolder, f'env{envNum}'))))
+                #for i in range(len(os.listdir(osp.join(dataFolder, f'env{envNum}'))))
+                for i in range(2000)
             ]
         self.dataFolder = dataFolder
     
@@ -74,24 +71,53 @@ class PathDataLoader(Dataset):
         explored_map = data['explored_map']
         collison_map = data['collision_map']
         map_size = collison_map.shape
-        path = [data['next_waypoint']] 
-        goal_index = geom2pix(data['path_to_go'][-1, :], size = (240,240))
+        receptive_field = 32
+        goal_index = (data['goal'][1], data['goal'][0])
         start_index = (data['curr_loc'][1], data['curr_loc'][0]) 
+        path = data['path_to_go']
+        #mapEncoder = get_encoder_input(explored_map, collison_map , goal_index, start_index, receptive_field)            
+        mapEncoder = get_encoder_input(explored_map, 1 - collison_map , goal_index, start_index, receptive_field)  
+        #start_pos = data['path_to_go'][0]
+        # found = False
+        # grid = get_grid_points(map_size, receptive_field)
+        # for i in range(path.shape[0]):
+        #     start_idx = geom2pix_mat_pos([start_pos], map_size, receptive_field)[0][0]
+        #     next_point_idx = geom2pix_mat_pos([geom2pix(path[i], size = map_size)], map_size, receptive_field)[0][0]
+        #     if (start_idx != next_point_idx):
+        #         next_point_to_go = geom2pix(path[i] , size=map_size)
+        #         found = True
+        #         break
+        # if not found:    
+        #     next_point_to_go = geom2pix(path[-1,:] , size=map_size)
         
-        mapEncoder = get_encoder_input(explored_map, collison_map , goal_index, start_index)            
-
+        #next_point_idx = geom2pix_mat_pos([next_point_to_go], map_size, receptive_field)[0][0]
         AnchorPointsPos = []
+        #AnchorPointsNeg = []
+        # AnchorPointsPos.append(next_point_idx)
         for pos in path:
-            indices, = geom2pix_mat_pos(pos, size = map_size)
-            #print (pos,indices)
+            #index = geom2pix_mat_pos([geom2pix(pos, size = map_size)], map_size, receptive_field)[0][0]
+            indices, = geom2pix_mat_pos([geom2pix(pos, size = map_size)], map_size, receptive_field)
+            #neg_indices = geom2pix_mat_neg([geom2pix(pos, size = map_size)], map_size, receptive_field)
             for index in indices:
                 if index not in AnchorPointsPos:
-                    AnchorPointsPos.append(index)
-
-        backgroundPoints = list(set(range(len(get_hash_table())))-set(AnchorPointsPos))
+                     AnchorPointsPos.append(index)
+            # if index not in AnchorPointsPos:
+            #     AnchorPointsPos.append(index) 
+            # for index in neg_indices:     
+            #     if index not in AnchorPointsNeg:
+            #         AnchorPointsNeg.append(index)              
+        #AnchorPointsNeg = list(set(range(len(get_grid_points(map_size, receptive_field))))-set(AnchorPointsPos))
+        backgroundPoints = list(set(range(len(get_grid_points(map_size, receptive_field))))-set(AnchorPointsPos))
         numBackgroundSamp = min(len(backgroundPoints), 2*len(AnchorPointsPos))
         AnchorPointsNeg = np.random.choice(backgroundPoints, size=numBackgroundSamp, replace=False).tolist()
+
+        #AnchorPointsNeg = list(set(AnchorPointsNeg)-set(AnchorPointsPos))
         anchor = torch.cat((torch.tensor(AnchorPointsPos), torch.tensor(AnchorPointsNeg)))
+
+
+        #labels = torch.tensor(AnchorPointsPos)
+        
+        
         labels = torch.zeros_like(anchor)
         labels[:len(AnchorPointsPos)] = 1
         preprocess_rgb = transforms.Compose([transforms.Resize(256),transforms.CenterCrop(224),transforms.ToTensor(),

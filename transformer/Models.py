@@ -63,13 +63,16 @@ class EncoderMap(nn.Module):
         # NOTE: pytorch doesn't have a good way to ensure automatic padding. This
         # allows only for a select few map sizes to be solved using this method.
         self.to_patch_embedding = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=5),
+            nn.Conv2d(2, 16, kernel_size=5),
             nn.MaxPool2d(kernel_size=2),
             nn.ReLU(),
             nn.Conv2d(16, 16, kernel_size=5),
             nn.MaxPool2d(kernel_size=2),
             nn.ReLU(),
-            nn.Conv2d(16, d_model, kernel_size=5, stride=5, padding=3)
+            nn.Conv2d(16, d_model, kernel_size=5, stride=5, padding=3),
+            # nn.MaxPool2d(kernel_size=2),
+            # nn.ReLU(),
+            # nn.Conv2d(d_model, d_model, kernel_size=3),
         )
         
         self.reorder_dims = Rearrange('b c h w -> b (h w) c')
@@ -82,7 +85,6 @@ class EncoderMap(nn.Module):
 
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         
-
     def forward(self, input_map):
         '''
         The input of the Encoder should be of dim (b, c, h, w).
@@ -124,28 +126,31 @@ class Transformer(nn.Module):
             d_inner=d_inner, 
             dropout=dropout, 
         )
-        self.depth_model = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=8, stride=3),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=7, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=6, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 32, kernel_size=5, stride=2),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(1152,512),
-            nn.ReLU(),
+        # self.depth_model = nn.Sequential(
+        #     nn.Conv2d(1, 64, kernel_size=8, stride=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(64, 64, kernel_size=7, stride=2),
+        #     nn.ReLU(),
+        #     nn.Conv2d(64, 64, kernel_size=6, stride=2),
+        #     nn.ReLU(),
+        #     nn.Conv2d(64, 32, kernel_size=5, stride=2),
+        #     nn.ReLU(),
+        #     nn.Flatten(),
+        #     nn.Linear(1152,512),
+        #     nn.ReLU(),
 
-        )
+        # )
 
-        resnet18 = models.resnet18(pretrained=True)
-        #Taking features from the second last layer of the Resnet18 Network
-        self.rgb_model = torch.nn.Sequential(*(list(resnet18.children())[:-1]))
+        # resnet18 = models.resnet18(pretrained=True)
+        # #Taking features from the second last layer of the Resnet18 Network
+        # self.rgb_model = torch.nn.Sequential(*(list(resnet18.children())[:-1]))
         # Last linear layer for prediction
         self.class_pred = nn.Sequential(
             Rearrange('b c d_model -> (b c) d_model 1 1'),
-            nn.Conv2d(512, 3, kernel_size=1),
+            nn.Conv2d(512, 2, kernel_size=1),
+            
+            #nn.Conv2d(512, 1, kernel_size=1),
+
             Rearrange('bc d 1 1 -> bc d')
         )
 
@@ -158,19 +163,17 @@ class Transformer(nn.Module):
         :param cur_index: The current anchor point of patch.
         '''
         enc_output = self.encoder_map(input_map)
-        rgb_output  = self.rgb_model(rgb)
-        rgb_output = rearrange(rgb_output,'b c 1 1 -> b 1 c')
-        #print(depth)
-        depth_output = self.depth_model(depth)
-        #print(depth_output)
-        depth_output = rearrange(depth_output,'b c-> b 1 c')
-        #print(rgb_output)
-        #print(depth_output)
-        combined_output = torch.cat((enc_output,rgb_output,depth_output), dim = 1)
-        seq_logit = self.class_pred(combined_output)
-        #seq_logit = self.classPred(enc_output)
+        #print(summary(self.encoder_map,(3,480,480))) 
+        # rgb_output  = self.rgb_model(rgb)
+        # rgb_output = rearrange(rgb_output,'b c 1 1 -> b 1 c')
+        # depth_output = self.depth_model(depth)
+        # depth_output = rearrange(depth_output,'b c-> b 1 c')
+        # combined_output = torch.cat((enc_output,rgb_output,depth_output), dim = 1)
+        # seq_logit = self.class_pred(combined_output)
+        seq_logit = self.class_pred(enc_output)
         batch_size = input_map.shape[0]
         return rearrange(seq_logit, '(b c) d -> b c d', b=batch_size)
+        #return rearrange(seq_logit, '(b c) d -> b d c', b=batch_size)
 
 
 

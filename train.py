@@ -19,6 +19,7 @@ from transformer import Models, Optim
 from dataLoader import PathDataLoader, PaddedSequence
 from torch.utils.tensorboard import SummaryWriter
 import time
+from utils.mpt_utils import get_grid_points, geom2pix_mat_pos
 
 
 def cal_performance(predVals, anchorPoints, trueLabels, lengths):
@@ -58,7 +59,6 @@ def train_epoch(model, trainingData, optimizer, device):
         labels =  batch['labels'].to(device)
         lengths =  batch['length'].to(device)
         predVal = model(encoder_input, rgb_input,depth_input)
-        
         # Calculate the cross-entropy loss
         loss, n_correct = cal_performance(
             predVal, anchor , labels , lengths
@@ -87,7 +87,6 @@ def eval_epoch(model, validationData, device):
             rgb_input = batch['rgb'].float().to(device)
             depth_input = batch['depth'].float().to(device)
             predVal = model(encoder_input, rgb_input,depth_input)
-
             loss, n_correct = cal_performance(
                 predVal, 
                 batch['anchor'].to(device), 
@@ -111,7 +110,7 @@ def check_data_folders(folder):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batchSize', help="Batch size per GPU", type=int, default = 120)
+    parser.add_argument('--batchSize', help="Batch size per GPU", type=int, default = 80)
     parser.add_argument('--train', help="Requires training", type=int, default = 1)
     parser.add_argument('--modelFolder', help="path to pretrained model", default = None)
     parser.add_argument('--exp_name', help="Directory to save training Data",default = 'exp1')
@@ -123,7 +122,7 @@ if __name__ == "__main__":
     device = 'cpu'
     if torch.cuda.is_available():
         print("Using GPU....")
-        device = torch.device("cuda:1")
+        device = torch.device("cuda:0")
 
     if torch.cuda.device_count() > 1:
         batch_size = batch_size * torch.cuda.device_count()
@@ -175,17 +174,17 @@ if __name__ == "__main__":
     )
             
     trainDataset = PathDataLoader(
-        env_list=list(range(1,35)),
-        dataFolder=osp.join(dataFolder, 'train_full')
+        env_list=list(range(1,10)),
+        dataFolder=osp.join(dataFolder, 'train_mini')
     )
-    trainingData = DataLoader(trainDataset, shuffle=True, num_workers=15, collate_fn=PaddedSequence, batch_size=batch_size)
+    trainingData = DataLoader(trainDataset, shuffle=True, num_workers=5, collate_fn=PaddedSequence, batch_size=batch_size)
 
     # Validation Data
     valDataset = PathDataLoader(
         env_list=list(range(1,10)),
-        dataFolder=osp.join(dataFolder, 'train_full')
+        dataFolder=osp.join(dataFolder, 'val_mini')
     )
-    validationData = DataLoader(valDataset, shuffle=True, num_workers=12, collate_fn=PaddedSequence, batch_size=batch_size)
+    validationData = DataLoader(valDataset, shuffle=True, num_workers=2, collate_fn=PaddedSequence, batch_size=batch_size)
     
     # Increase number of epochs.
     n_epochs = 1000

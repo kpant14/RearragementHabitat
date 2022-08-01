@@ -4,11 +4,14 @@ from typing import Optional, Dict, List
 import json
 from habitat.config.default import CN, Config
 from habitat import Config, Dataset
-from habitat_baselines.common.environments import NavRLEnv
-import gym
+import habitat
+
 
 class RearrangementRLEnv(Exploration_Env):
     def __init__(self, args, rank, config_env, config_baseline, dataset):
+    # def __init__(
+    #     self, config: Config, dataset: Optional[Dataset] = None
+    # ) -> None:
         self._prev_measure = {
             "agent_to_object_distance": None,
             "object_to_goal_distance": None,
@@ -16,18 +19,15 @@ class RearrangementRLEnv(Exploration_Env):
             "gripped_object_count": 0,
         }
         super().__init__(args, rank,config_env, config_baseline, dataset)
+       
         self.num_actions = 3
-        # self.action_space = gym.spaces.Discrete(self.num_actions)
-
-        # self.observation_space = gym.spaces.Box(0, 255,
-        #                                         (3, args.frame_height,
-        #                                             args.frame_width),
-        #                                         dtype='uint8')
-        #self._rl_config = config_env.RL
-        #self._core_env_config = config_env.TASK_CONFIG
+        # self._rl_config = config.RL
+        # self._core_env_config = config.TASK_CONFIG
         self._previous_action = None
-        self.args = args
-        self._success_distance = config_env.TASK.SUCCESS_DISTANCE
+        #self.args = args
+        #self._success_distance = config.TASK_CONFIG.TASK.SUCCESS_DISTANCE
+        self._success_distance=0
+        #super().__init__(config.TASK_CONFIG, dataset)
        
     def reset(self):
         self._previous_action = None
@@ -41,15 +41,21 @@ class RearrangementRLEnv(Exploration_Env):
         self.info["gripped_object_id"] = self._prev_measure["gripped_object_id"]
         self.info["gripped_object_count"] = self._prev_measure["gripped_object_count"]
         return state, self.info
+        # observations['object_position'] = observations['object_position'][0]
+        # observations['object_goal'] = observations['object_goal'][0] 
+        # #print(observations['object_position'])
+        # return observations
 
     def step(self, action):
         self._previous_action = action
-        state, rew, done, self.info = super().step(action)
-        self.info["agent_to_object_distance"] = self._prev_measure["agent_to_object_distance"]
-        self.info["object_to_goal_distance"] = self._prev_measure["object_to_goal_distance"]
-        self.info["gripped_object_id"] = self._prev_measure["gripped_object_id"]
-        self.info["gripped_object_count"] = self._prev_measure["gripped_object_count"]
-        return state, rew, done, self.info     
+        obs, rew, done, info = super().step(action)
+        # self.info["agent_to_object_distance"] = self._prev_measure["agent_to_object_distance"]
+        # self.info["object_to_goal_distance"] = self._prev_measure["object_to_goal_distance"]
+        # self.info["gripped_object_id"] = self._prev_measure["gripped_object_id"]
+        # self.info["gripped_object_count"] = self._prev_measure["gripped_object_count"]
+        # obs['object_position'] = obs['object_position'][0]
+        # obs['object_goal'] = obs['object_goal'][0] 
+        return obs, rew, done, info     
 
     def get_reward_range(self):
         return (
@@ -135,14 +141,14 @@ class RearrangementRLEnv(Exploration_Env):
         prev_metric = self._prev_measure["agent_to_object_distance"]
         dist_reward = prev_metric - curr_metric
         self._prev_measure["agent_to_object_distance"] = curr_metric
-        return np.sum(dist_reward)# this has to be changed
+        return np.sum(dist_reward[0])# only for first object
 
     def get_object_to_goal_dist_reward(self):
         curr_metric = self._env.get_metrics()["object_to_goal_distance"]
         prev_metric = self._prev_measure["object_to_goal_distance"]
         dist_reward = prev_metric - curr_metric
         self._prev_measure["object_to_goal_distance"] = curr_metric
-        return np.sum(dist_reward)
+        return np.sum(dist_reward[0])# only for first object
 
     def _episode_success(self, observations):
         r"""Returns True if object is within distance threshold of the goal."""

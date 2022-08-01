@@ -1,5 +1,7 @@
 {
     "python.analysis.extraPaths": [
-        "./env/habitat/habitat_lab"
+        "./env/habitat/habitat_lab",
+        "./env/habitat/habitat-lab",
+        "./env/habitat/habitat-api"
     ]
 }

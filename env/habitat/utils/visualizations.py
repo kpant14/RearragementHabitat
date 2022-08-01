@@ -16,9 +16,9 @@ import skimage
 from habitat_sim.utils import viz_utils as vut
 import cv2
 
-def visualize(fig, ax, img, grid, patch_map, pred_map, pos, gt_pos, dump_dir, rank, ep_no, t,
+def visualize(fig, ax, img, grid, grid_full, patch_map, pred_map, pos, gt_pos, dump_dir, rank, ep_no, t,
               visualize, print_images, vis_style):
-    for i in range(2):
+    for i in range(3):
         ax[i].clear()
         ax[i].set_yticks([])
         ax[i].set_xticks([])
@@ -26,9 +26,7 @@ def visualize(fig, ax, img, grid, patch_map, pred_map, pos, gt_pos, dump_dir, ra
         ax[i].set_xticklabels([])
 
     ax[0].imshow(img)
-    ax[0].set_title("Observation", family='sans-serif',
-                    fontname='Helvetica',
-                    fontsize=20)
+    ax[0].set_title("Observation", fontsize=20)
 
     if vis_style == 1:
         title = "Predicted Map and Pose"
@@ -36,9 +34,7 @@ def visualize(fig, ax, img, grid, patch_map, pred_map, pos, gt_pos, dump_dir, ra
         title = "Ground-Truth Map and Pose"
 
     ax[1].imshow(grid)
-    ax[1].set_title(title, family='sans-serif',
-                    fontname='Helvetica',
-                    fontsize=20)
+    ax[1].set_title(title, fontsize=20)
 
     # Draw GT agent pose
     agent_size = 8
@@ -65,8 +61,11 @@ def visualize(fig, ax, img, grid, patch_map, pred_map, pos, gt_pos, dump_dir, ra
     ax[1].arrow(x - 1 * dx, y - 1 * dy, dx * agent_size, dy * agent_size * 1.25,
                 head_width=agent_size, head_length=agent_size * 1.25,
                 length_includes_head=True, fc=fc, ec=fc, alpha=0.6)
-
-    ax[1].imshow(np.flipud(patch_map), cmap='gray', alpha=0.5)
+    
+    ax[2].imshow(grid_full)
+    ax[2].set_title('Full Map',fontsize=20)            
+    if (patch_map):
+        ax[1].imshow(np.flipud(patch_map), cmap='gray', alpha=0.5)
     for _ in range(5):
         plt.tight_layout()
 
@@ -98,20 +97,7 @@ def fill_color(colored, mat, color):
 
 
 def get_colored_map(mat, collision_map, visited, visited_gt, goal,
-                    explored, gt_map, gt_map_explored):
-    # m, n = mat.shape
-    # colored = np.ones((m, n, 3))
-    # #White for explored map
-    # current_palette = [(1,1,1)]
-    # colored = fill_color(colored, explored, current_palette[0])  
-    # #Balck for th obstacle map
-    # current_palette = [(0,0,0)]
-    # colored = fill_color(colored, mat, current_palette[0])      
-    # colored = 1 - colored
-    # colored *= 255
-    # colored = colored.astype(np.uint8)
-    
-    
+                    explored, gt_map, gt_map_explored):    
     m, n = mat.shape
     colored = np.zeros((m, n, 3))
     pal = sns.color_palette("Paired")
@@ -156,6 +142,51 @@ def get_colored_map(mat, collision_map, visited, visited_gt, goal,
 
     return colored
 
+def get_colored_full_map(mat, collision_map, visited, visited_gt, goal,
+                    explored, gt_map, gt_map_explored):    
+    m, n = mat.shape
+    colored = np.zeros((m, n, 3))
+    pal = sns.color_palette("Paired")
+
+    current_palette = [(0.9, 0.9, 0.9)]
+    colored = fill_color(colored, gt_map, current_palette[0])
+
+    current_palette = [(235. / 255., 243. / 255., 1.)]
+    colored = fill_color(colored, explored, current_palette[0])
+
+    green_palette = sns.light_palette("green")
+    colored = fill_color(colored, mat, pal[2])
+
+    current_palette = [(0.6, 0.6, 0.6)]
+    colored = fill_color(colored, gt_map_explored, current_palette[0])
+
+    colored = fill_color(colored, mat * gt_map_explored, pal[3])
+
+    red_palette = sns.light_palette("red")
+
+    colored = fill_color(colored, visited_gt, current_palette[0])
+    colored = fill_color(colored, visited, pal[4])
+    colored = fill_color(colored, visited * visited_gt, pal[5])
+
+    colored = fill_color(colored, collision_map, pal[2])
+
+    current_palette = sns.color_palette()
+
+    selem = skimage.morphology.disk(4)
+    goal_mat = np.zeros((m, n))
+    goal_mat[goal[0], goal[1]] = 1
+    goal_mat = 1 - skimage.morphology.binary_dilation(
+        goal_mat, selem) != True
+
+    colored = fill_color(colored, goal_mat, current_palette[0])
+
+    current_palette = sns.color_palette("Paired")
+
+    colored = 1 - colored
+    colored *= 255
+    colored = colored.astype(np.uint8)
+
+    return colored
 
 
 def make_video_cv2(

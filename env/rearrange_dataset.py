@@ -122,4 +122,4 @@ class RearrangementDatasetV0(PointNavDatasetV1):
             for i, goal in enumerate(rearrangement_episode.goals):
                 rearrangement_episode.goals[i] = RearrangementSpec(**goal)
 
-            self.episodes.append(rearrangement_episode)            
+            self.episodes.append(rearrangement_episode)           

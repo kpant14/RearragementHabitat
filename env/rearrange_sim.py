@@ -42,8 +42,9 @@ class RearrangementSim(HabitatSim):
         self.navmesh_settings.agent_height = agent_config.HEIGHT
 
     def reconfigure(self, config: Config) -> None:
-        super().reconfigure(config)
         self._initialize_objects()
+        super().reconfigure(config)
+        
 
     def reset(self):
         sim_obs = super().reset()

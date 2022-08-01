@@ -14,7 +14,7 @@ from PIL import Image
 from torch.nn import functional as F
 from torchvision import transforms
 
-from utils.utils import ValidityChecker
+from utils.mpt_utils import ValidityChecker
 
 if sys.platform == 'darwin':
     matplotlib.use("tkagg")
@@ -31,6 +31,7 @@ from env.utils.fmm_planner import FMMPlanner
 from env.habitat.utils.noisy_actions import CustomActionSpaceConfiguration
 from  env.habitat.utils import pose as pu
 from  env.habitat.utils import visualizations as vu
+from habitat.utils.visualizations import maps
 from env.habitat.utils.supervision import HabitatMaps
 from mapUtils import get_path, create_prm_planner,get_random_valid_pos, get_validity_checker,check_validity,get_nearest_valid
 from ompl import base as ob
@@ -59,7 +60,7 @@ class Exploration_Env(habitat.RLEnv):
         if args.visualize:
             plt.ion()
         if args.print_images or args.visualize:
-            self.figure, self.ax = plt.subplots(1,2, figsize=(6*16/9, 6),
+            self.figure, self.ax = plt.subplots(1,3, figsize=(6*16/9, 6),
                                                 facecolor="whitesmoke",
                                                 num="Thread {}".format(rank))
 
@@ -76,14 +77,6 @@ class Exploration_Env(habitat.RLEnv):
         self.sensor_noise_left = \
                 pickle.load(open("noise_models/sensor_noise_left.pkl", 'rb'))
 
-        #habitat.SimulatorActions.extend_action_space("NOISY_FORWARD")
-        #habitat.SimulatorActions.extend_action_space("NOISY_RIGHT")
-        #habitat.SimulatorActions.extend_action_space("NOISY_LEFT")
-
-        config_env.defrost()
-        #config_env.SIMULATOR.ACTION_SPACE_CONFIG = \
-        #        "CustomActionSpaceConfiguration"
-        config_env.freeze()
 
 
         super().__init__(config_env, dataset)
@@ -229,13 +222,12 @@ class Exploration_Env(habitat.RLEnv):
         # Action remapping
         if action == 2: # Forward
             action = 1
-            #noisy_action = habitat.SimulatorActions.NOISY_FORWARD
+
         elif action == 1: # Right
             action = 3
-            #noisy_action = habitat.SimulatorActions.NOISY_RIGHT
+
         elif action == 0: # Left
             action = 2
-            #noisy_action = habitat.SimulatorActions.NOISY_LEFT
 
         self.last_loc = np.copy(self.curr_loc)
         self.last_loc_gt = np.copy(self.curr_loc_gt)
@@ -243,10 +235,7 @@ class Exploration_Env(habitat.RLEnv):
         
         self.last_rgb = np.copy(self.curr_rgb)
         self.last_depth = np.copy(self.curr_depth)
-        # if args.noisy_actions:
-        #     obs, rew, done, info = super().step(noisy_action)
-        # else:
-        #     obs, rew, done, info = super().step(action)
+       
         obs, rew, done, info = super().step(action)
         # Preprocess observations
         rgb = obs['rgb'].astype(np.uint8)
@@ -344,7 +333,6 @@ class Exploration_Env(habitat.RLEnv):
                 self.save_trajectory_data()
         else:
             done = False
-
         return state, rew, done, self.info
         #return obs, rew, done, self.info
 
@@ -448,18 +436,20 @@ class Exploration_Env(habitat.RLEnv):
 
         args = self.args
 
-        # Get Map prediction
-        map_pred = inputs['map_pred']
-        exp_pred = inputs['exp_pred'] 
-            
-        grid = np.rint(map_pred)
-        explored = np.rint(exp_pred)
-
         # Get pose prediction and global policy planning window
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = inputs['pose_pred']
         gx1, gx2, gy1, gy2 = int(gx1), int(gx2), int(gy1), int(gy2)
         planning_window = [gx1, gx2, gy1, gy2]
-
+        
+        # Get Map prediction
+       
+        # map_pred = inputs['map_pred']
+        # exp_pred = inputs['exp_pred']
+        
+        map_pred = inputs['map_pred'][gx1:gx2,gy1:gy2]
+        exp_pred = inputs['exp_pred'][gx1:gx2,gy1:gy2] 
+        grid = np.rint(map_pred)
+        explored = np.rint(exp_pred)    
         # Get last loc
         last_start_x, last_start_y = self.last_loc[0], self.last_loc[1]
         r, c = last_start_y, last_start_x
@@ -473,37 +463,8 @@ class Exploration_Env(habitat.RLEnv):
         start = [int(r * 100.0/args.map_resolution - gx1),
                  int(c * 100.0/args.map_resolution - gy1)]
         start = pu.threshold_poses(start, grid.shape)
-        #TODO: try reducing this
-        start_x - gy1*args.map_resolution/100.0
-        if args.data_gen:
-            planning_map = self.explorable_map[gx1:gx2, gy1:gy2]
-            if (self.prm_planner == None):
-                _,validity_checker = get_validity_checker(planning_map)
-                self.prm_planner_setup,self.prm_planner = create_prm_planner(validity_checker)
-            if (len(self.prm_star_path) == 0 or self.goal_reached == 1):
-                if len(self.prm_star_path) == 0:
-                    self.start_state[1] = np.float64((grid.shape[0] - start[0])* args.map_resolution / 100 )
-                    self.start_state[0] = np.float64(start[1]* args.map_resolution / 100 )
-                else:
-                    #Take the previous goal position as the new start position 
-                    self.start_state = self.goal_state     
-                # To compensate when the agent spawn at a location not valid on GT map  
-                if not check_validity(planning_map , self.start_state):
-                     state = get_nearest_valid(planning_map,self.start_state)
-                     self.start_state[0] = state[0]
-                     self.start_state[1] = state[1]
-
-                prm_star_path = {}
-                success = False
-                while success == False:
-                    self.goal_state,_ = get_random_valid_pos(planning_map, robot_radius = 0.3) 
-                    path, path_interpolated, success = get_path(self.start_state, self.goal_state, self.prm_planner_setup, self.prm_planner,self.rank+1,plan_time=2)
-                    prm_star_path['path'] = path
-                    prm_star_path['path_interpolated'] = path_interpolated
-                    prm_star_path['success'] = success
-                self.prm_star_path = prm_star_path    
-                self.goal_reached = 0
-
+        start_full = [int(r * 100.0/args.map_resolution),
+                 int(c * 100.0/args.map_resolution)] 
         self.visited[gx1:gx2, gy1:gy2][start[0]-2:start[0]+3,
                                        start[1]-2:start[1]+3] = 1
 
@@ -534,20 +495,16 @@ class Exploration_Env(habitat.RLEnv):
             y = int(last_start[1] + (start_gt[1] - last_start[1]) * (i+1) / steps)
             self.visited_gt[x, y] = 1
 
-        #print(inputs['pred_map'])
-        
         # Get goal
-        #goal = inputs['goal']
-        
-        goal  = np.argwhere(inputs['pred_map'].max() == inputs['pred_map'])[0]*100.0 / args.map_resolution
-        print(np.argwhere(inputs['pred_map'].max() == inputs['pred_map']), goal)
+        goal = inputs['goal']
+        goal_full = inputs['goal_full']
+        # goal  = np.argwhere(inputs['pred_map'].max() == inputs['pred_map'])[0]*100.0 / args.map_resolution
+        # a = np.argwhere(inputs['pred_map']>0.5)
+        # #print(np.mean(a, axis=0))
+        # goal = np.mean(a, axis=0)*100.0 / args.map_resolution
+        # print(np.argwhere(inputs['pred_map'].max() == inputs['pred_map']), goal)
         goal = pu.threshold_poses(goal.astype(int), grid.shape)
         
-        # Changing the goal location to the random valid goal state
-        if args.data_gen:
-            goal = np.array([grid.shape[1] -  self.goal_state[1]*100.0 / args.map_resolution,self.goal_state[0]*100.0 / args.map_resolution]).astype(int)
-            goal = pu.threshold_poses(goal, grid.shape)
-
         # Get intrinsic reward for global policy
         # Negative reward for exploring explored areas i.e.
         # for choosing explored cell as long-term goal
@@ -570,56 +527,10 @@ class Exploration_Env(habitat.RLEnv):
         relative_dist = relative_dist*5./100.
         angle_st_goal = math.degrees(math.atan2(stg_x - start[0],
                                                 stg_y - start[1]))                                 
-       
         if args.data_gen:
-            path = self.prm_star_path['path_interpolated'] 
-            (stg_y, stg_x) = path[self.prm_star_path_idx] * 100.0 / args.map_resolution
-            stg_x = grid.shape[0] - stg_x
-            relative_dist = pu.get_l2_distance(stg_x, start[0], stg_y, start[1])
-            relative_dist = relative_dist*5./100.
-            angle_st_goal = math.degrees(math.atan2(stg_x - start[0],
-                                                    stg_y - start[1]))
-            path_to_go = path[self.prm_star_path_idx:]
-            if (relative_dist < 0.5):
-                if (self.prm_star_path_idx < len(path) - 1):
-                    self.prm_star_path_idx += 1
-        
-               
-                
-            # Data Logging for Region Proposal Network
-            dump_dir = "{}/data/{}/".format(args.dump_location,
-                                                    args.exp_name)
-            ep_dir = '{}/env{}/'.format(
-                                dump_dir, self.rank+1)  
-
-            # Getting the pose of the agent wrt to the local map
-            last_loc = [last_start[0], last_start[1], self.last_loc[2]]
-            #curr_loc = [start_x - gy1*args.map_resolution/100.0, start_y - gx1*args.map_resolution/100.0, start_o] 
-            curr_loc = [start[0], start[1], self.curr_loc[2]]
-
-            data={}
-            # data['last_loc'] = last_loc
-            # data['last_rgb'] = self.last_rgb
-            # data['last_depth'] = self.last_depth
-            data['prm_star_path'] = self.prm_star_path
-            data['curr_loc'] = curr_loc
-            data['curr_rgb'] = self.curr_rgb
-            data['curr_depth'] = self.curr_depth
-            data['goal'] = goal
-            data['path_to_go'] = path_to_go
-            data['next_waypoint'] = path[self.prm_star_path_idx]
-            data['explored_map'] = self.explored_map[gx1:gx2, gy1:gy2]
-            data['collision_map'] = map_pred
-            data['gt_map'] = self.explorable_map[gx1:gx2, gy1:gy2]
-            if not os.path.exists(ep_dir):
-                os.makedirs(ep_dir)
-            with gzip.open(os.path.join(ep_dir,f'data{(self.episode_no-1) * args.max_episode_length + self.timestep:06d}.p'), "wb") as f:
-                pickle.dump(data, f)    
-                #pickle.dump(data, open(os.path.join(ep_dir,f'data{(self.episode_no-1) * args.max_episode_length + self.timestep:06d}.p'), 'wb'))
-
-            if (pu.get_l2_distance(start[0], goal[0], start[1], goal[1])*5./100. < 0.2):
-                    self.goal_reached = 1 
-                    self.prm_star_path_idx = 0    
+            goal_full, relative_dist, angle_st_goal = self.data_gen_rpn(inputs,start_full)
+            goal = np.array([goal_full[0]-gx1,goal_full[1]-gy1])
+            goal = pu.threshold_poses(goal.astype(int), grid.shape) 
             
         angle_agent = (start_o)%360.0
         if angle_agent > 180:
@@ -664,7 +575,6 @@ class Exploration_Env(habitat.RLEnv):
                             dump_dir, self.rank+1, self.episode_no)
             if not os.path.exists(ep_dir):
                 os.makedirs(ep_dir)
-
             if args.vis_type == 1: # Visualize predicted map and pose
                 vis_grid = vu.get_colored_map(np.rint(map_pred),
                                 self.collison_map[gx1:gx2, gy1:gy2],
@@ -676,7 +586,27 @@ class Exploration_Env(habitat.RLEnv):
                                 self.map[gx1:gx2, gy1:gy2] *
                                     self.explored_map[gx1:gx2, gy1:gy2])
                 vis_grid = np.flipud(vis_grid)
-                vu.visualize(self.figure, self.ax, self.obs, vis_grid[:,:,::-1], inputs['patch_map'], inputs['pred_map'],
+                vis_grid_full = vu.get_colored_map(np.rint(inputs['map_pred']),
+                                self.collison_map,
+                                self.visited_vis,
+                                self.visited_gt,
+                                goal_full,
+                                self.explored_map,
+                                self.explorable_map,
+                                self.map *
+                                    self.explored_map)
+                vis_grid_full = np.flipud(vis_grid_full)
+                # vu.visualize(self.figure, self.ax, self.obs, vis_grid[:,:,::-1], inputs['patch_map'], inputs['pred_map'],
+                #             (start_x - gy1*args.map_resolution/100.0,
+                #              start_y - gx1*args.map_resolution/100.0,
+                #              start_o),
+                #             (start_x_gt - gy1*args.map_resolution/100.0,
+                #              start_y_gt - gx1*args.map_resolution/100.0,
+                #              start_o_gt),
+                #             dump_dir, self.rank, self.episode_no,
+                #             self.timestep, args.visualize,
+                #             args.print_images, args.vis_type)
+                vu.visualize(self.figure, self.ax, self.obs, vis_grid[:,:,::-1],vis_grid_full[:,:,::-1], None, None,
                             (start_x - gy1*args.map_resolution/100.0,
                              start_y - gx1*args.map_resolution/100.0,
                              start_o),
@@ -705,10 +635,86 @@ class Exploration_Env(habitat.RLEnv):
                             args.print_images, args.vis_type)
         return output
 
-    def _get_gt_map(self, full_map_size):
-        #self.scene_name = self.habitat_env.sim.config.SCENE
-        #logger.error('Computing map for %s', self.scene_name)
+    def data_gen_rpn(self, inputs, start):
+        args = self.args
+        planning_map = self.explorable_map
+        if (self.prm_planner == None):
+            _,validity_checker = get_validity_checker(planning_map)
+            self.prm_planner_setup,self.prm_planner = create_prm_planner(validity_checker)
+        if (len(self.prm_star_path) == 0 or self.goal_reached == 1):
+            if len(self.prm_star_path) == 0:
+                self.start_state[1] = np.float64((planning_map.shape[0] - start[0])* args.map_resolution / 100 )
+                #self.start_state[1] = np.float64((grid.shape[0] - start[0])* args.map_resolution / 100 )
+                self.start_state[0] = np.float64(start[1]* args.map_resolution / 100 )
+            else:
+                #Take the previous goal position as the new start position 
+                self.start_state = self.goal_state     
+            # To compensate when the agent spawn at a location not valid on GT map  
+            if not check_validity(planning_map , self.start_state):
+                    state = get_nearest_valid(planning_map,self.start_state)
+                    self.start_state[0] = state[0]
+                    self.start_state[1] = state[1]
 
+            prm_star_path = {}
+            success = False
+            while success == False:
+                self.goal_state,_ = get_random_valid_pos(planning_map, robot_radius = 0.3) 
+                path, path_interpolated, success = get_path(self.start_state, self.goal_state, self.prm_planner_setup, self.prm_planner,self.rank+1,plan_time=2)
+                prm_star_path['path'] = path
+                prm_star_path['path_interpolated'] = path_interpolated
+                prm_star_path['success'] = success
+            self.prm_star_path = prm_star_path    
+            self.goal_reached = 0
+
+
+        path = self.prm_star_path['path_interpolated'] 
+        (stg_y, stg_x) = path[self.prm_star_path_idx] * 100.0 / args.map_resolution
+        stg_x = planning_map.shape[0] - stg_x
+        relative_dist = pu.get_l2_distance(stg_x, start[0], stg_y, start[1])
+        relative_dist = relative_dist*5./100.
+        angle_st_goal = math.degrees(math.atan2(stg_x - start[0],
+                                                stg_y - start[1]))
+        path_to_go = path[self.prm_star_path_idx:]
+        if (relative_dist < 0.5):
+            if (self.prm_star_path_idx < len(path) - 1):
+                self.prm_star_path_idx += 1
+    
+        goal = np.array([planning_map.shape[1] -  (self.goal_state[1])*100.0 / args.map_resolution,(self.goal_state[0])*100.0 / args.map_resolution]).astype(int)    
+            
+        # Data Logging for Region Proposal Network
+        dump_dir = "{}/data/{}/".format(args.dump_location,
+                                                args.exp_name)
+        ep_dir = '{}/env{}/'.format(
+                            dump_dir, self.rank+1)  
+
+        # Getting the pose of the agent wrt to the local map
+        #last_loc = [last_start[0], last_start[1], self.last_loc[2]]
+        curr_loc = [start[0], start[1], self.curr_loc[2]]
+        
+        data={}
+        data['prm_star_path'] = self.prm_star_path
+        data['curr_loc'] = curr_loc
+        data['curr_rgb'] = self.curr_rgb
+        data['curr_depth'] = self.curr_depth
+        data['goal'] = goal
+        data['path_to_go'] = path_to_go
+        data['next_waypoint'] = path[self.prm_star_path_idx]
+        data['explored_map'] = inputs['exp_pred']
+        data['collision_map'] = inputs['map_pred']
+        data['gt_map'] = self.explorable_map
+        
+        if not os.path.exists(ep_dir):
+            os.makedirs(ep_dir)
+        with gzip.open(os.path.join(ep_dir,f'data{(self.episode_no-1) * args.max_episode_length + self.timestep:06d}.p'), "wb") as f:
+            pickle.dump(data, f)    
+
+        if (pu.get_l2_distance(start[0], goal[0], start[1], goal[1])*5./100. < 0.2):
+                self.goal_reached = 1 
+                self.prm_star_path_idx = 0 
+        
+        return goal, relative_dist, angle_st_goal
+
+    def _get_gt_map(self, full_map_size):
         # Get map in habitat simulator coordinates
         self.map_obj = HabitatMaps(self.habitat_env)
         if self.map_obj.size[0] < 1 or self.map_obj.size[1] < 1:

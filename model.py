@@ -6,7 +6,7 @@ import numpy as np
 
 from utils.distributions import Categorical, DiagGaussian
 from utils.model import get_grid, ChannelPool, Flatten, NNBase
-
+from einops import rearrange, repeat
 
 # Global Policy model code
 class Global_Policy(NNBase):
@@ -382,6 +382,45 @@ class Local_IL_Policy(NNBase):
         return action, x, rnn_hxs
 
 
+class PPO_Policy(NNBase):
+
+    def __init__(self, input_shape, recurrent=False, hidden_size=512,
+                 downscaling=1):
+        super(PPO_Policy, self).__init__(recurrent, hidden_size,
+                                            hidden_size)
+        self.dropout = 0.5
+
+        resnet = models.resnet18(pretrained=True)
+        self.resnet_l5 = nn.Sequential(*list(resnet.children())[0:8])
+
+        # Extra convolution layer
+        self.conv = nn.Sequential(*filter(bool, [
+            nn.Conv2d(512, 64, (1, 1), stride=(1, 1)),
+            nn.ReLU(),
+            nn.Flatten()
+        ]))
+
+        # projection layers
+        self.proj1 = nn.Linear(4096, hidden_size)
+        if self.dropout > 0:
+            self.dropout1 = nn.Dropout(self.dropout)
+        self.linear = nn.Linear(hidden_size, hidden_size)
+        self.critic_linear = nn.Linear(hidden_size, 1)
+        self.train()
+
+    def forward(self, inputs, rnn_hxs, masks, extras):
+        inputs = rearrange(inputs,'b w h c -> b c w h')
+        resnet_output = self.resnet_l5(inputs[:,:3,:,:])
+        conv_output = self.conv(resnet_output)
+        proj1 = nn.ReLU()(self.proj1(conv_output))
+        if self.dropout > 0:
+            proj1 = self.dropout1(proj1)
+         
+        x = nn.ReLU()(self.linear(proj1))
+        if self.is_recurrent:
+            x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)  
+        return self.critic_linear(x).squeeze(-1), x, rnn_hxs
+
 # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/model.py#L15
 class RL_Policy(nn.Module):
 
@@ -393,7 +432,7 @@ class RL_Policy(nn.Module):
             base_kwargs = {}
 
         if model_type == 0:
-            self.network = Global_Policy(obs_shape, **base_kwargs)
+            self.network = PPO_Policy(obs_shape, **base_kwargs)
         else:
             raise NotImplementedError
 

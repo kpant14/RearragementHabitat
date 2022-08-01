@@ -10,8 +10,8 @@ from habitat.config.default import get_config as cfg_env
 from habitat.core.env import Env
 from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
 from .exploration_env import Exploration_Env
-from .habitat_lab.habitat.core.vector_env import VectorEnv
-from .habitat_lab.habitat_baselines.config.default import get_config as cfg_baseline
+from habitat.core.vector_env import VectorEnv
+from habitat_baselines.config.default import get_config as cfg_baseline
 
 
 def make_env_fn(args, config_env, config_baseline, rank):
@@ -36,7 +36,7 @@ def construct_envs(args):
     args_list = []
 
     basic_config = cfg_env(config_paths=
-                           ["env/habitat/habitat_lab/configs/" + args.task_config])                       
+                           ["env/habitat/habitat-lab/configs/" + args.task_config])                       
     basic_config.defrost()
     basic_config.DATASET.SPLIT = args.split
     basic_config.DATASET.DATA_PATH = (
@@ -56,7 +56,7 @@ def construct_envs(args):
 
     for i in range(args.num_processes):
         config_env = cfg_env(config_paths=
-                             ["env/habitat/habitat_lab/configs/" + args.task_config])
+                             ["env/habitat/habitat-lab/configs/" + args.task_config])
         config_env.defrost()
         config_env.DATASET.DATA_PATH = (
         "data/datasets/rearrangement/gibson/v1/{split}/{split}.json.gz"

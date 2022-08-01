@@ -17,13 +17,16 @@ def get_args():
                                 and training on gpus """)
     parser.add_argument('--num_processes_per_gpu', type=int, default=11)
     parser.add_argument('--num_processes_on_first_gpu', type=int, default=0)
-    parser.add_argument('--num_episodes', type=int, default=100,
+    parser.add_argument('--num_episodes', type=int, default=10,
                         help='number of training episodes (default: 1000000)')
     parser.add_argument('--no_cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--eval', type=int, default=0,
                         help='1: evaluate models (default: 0)')
     parser.add_argument('--train_global', type=int, default=1,
+                        help="""0: Do not train the Global Policy
+                                1: Train the Global Policy (default: 1)""")
+    parser.add_argument('--train_ppo', type=int, default=1,
                         help="""0: Do not train the Global Policy
                                 1: Train the Global Policy (default: 1)""")
     parser.add_argument('--train_local', type=int, default=1,
@@ -54,6 +57,9 @@ def get_args():
     parser.add_argument('--load_global', type=str, default="0",
                         help="""model path to load,
                                 0 to not reload (default: 0)""")
+    parser.add_argument('--load_ppo', type=str, default="0",
+                        help="""model path to load,
+                                0 to not reload (default: 0)""")                            
     parser.add_argument('--load_local', type=str, default="0",
                         help="""model path to load,
                                 0 to not reload (default: 0)""")
@@ -77,7 +83,7 @@ def get_args():
                         help='Frame width (default:84)')
     parser.add_argument('-fh', '--frame_height', type=int, default=128,
                         help='Frame height (default:84)')
-    parser.add_argument('-el', '--max_episode_length', type=int, default=100,
+    parser.add_argument('-el', '--max_episode_length', type=int, default=500,
                         help="""Maximum episode length in seconds for
                                 Doom (default: 180)""")
     parser.add_argument("--sim_gpu_id", type=int, default=0,
